@@ -3,12 +3,12 @@ import streamlit as st
 
 # --- 1. タイトル等のセッション状態の初期化 ---
 if "app_title" not in st.session_state:
-    st.session_state.app_title = "FundMonitor BI"
+    st.session_state.app_title = "汎用AIFAQチャットシステム"
 if "current_welcome_msg" not in st.session_state:
     st.session_state.current_welcome_msg = (
-        "はじめまして！「FundMonitor BI お助けAI」です。😊\n\n"
-        "当ツール（システム名：FundMonitor BI）の利用マニュアルと活用マニュアルのすべてを記憶していますよ。\n"
-        "導入方法、AWSの接続手順、データ更新方法、グラフ作成やExcel連動、出力方法など、何でも分かりやすくお答えします！"
+        "はじめまして！「汎用AIFAQ お助けAI」です。😊\n\n"
+        "お手元の資料や操作マニュアル（Excel, PDF, Word, CSV, PowerPoint等）を左側のメニューからアップロードしていただければ、即座にその内容を学習して専門のお助けAIに進化します！\n\n"
+        "再現したい成果物の出力サンプルもお持ちの場合は、そちらを読み込ませることで具体的なデータ作成手順を詳しくお調べします。何でもお気軽にご質問ください！"
     )
 
 # --- 【最優先ルール】Streamlitのページ構成設定は、他のあらゆるコマンドより先に最上部で実行します ---
@@ -264,7 +264,7 @@ def main_app():
     base_font_px = "22px"
     bubble_font_px = "22px"
 
-    # --- 🎨 image_b6fc39.png の配色・丸み・影・枠線をCSSで完全再現 & 2倍アバター ---
+    # --- 🎨 image_b6fc39.png の配色・丸み・影・枠線をCSSで完全再現 ---
     st.markdown(f"""<style>
 /* 1. 標準サイドバー領域を強制的に100%排除し、コンテナ崩れを物理解消 */
 [data-testid="stSidebar"] {{
@@ -274,10 +274,10 @@ display: none !important;
 display: none !important;
 }}
 
-/* 画面全体の余白を最大化 */
+/* 画面全体の余白を最大化 & 見切れ対策のパディング追加 */
 .block-container {{
-padding-top: 1.5rem !important;
-padding-bottom: 2rem !important;
+padding-top: 3.5rem !important;
+padding-bottom: 6rem !important; /* チャット入力のフローティングスペース確保 */
 padding-left: 2.5rem !important;
 padding-right: 2.5rem !important;
 max-width: 100% !important;
@@ -307,7 +307,7 @@ display: flex;
 flex-direction: column;
 gap: 20px;
 width: 100%;
-margin-bottom: 15px;
+margin-bottom: 25px;
 }}
 .chat-row-user {{
 display: flex;
@@ -386,9 +386,9 @@ font-size: 20px !important;
 }}
 </style>""", unsafe_allow_html=True)
 
-    # --- 🌟 モスグリーン（#3b5e43）超巨大ヘッダー ---
+    # --- 🌟 モスグリーン（#3b5e43）超巨大ヘッダー (見切れを防ぐため margin-topを追加) ---
     st.markdown(f"""
-    <div style="background-color: #3b5e43; padding: 22px 30px; border-radius: 12px; display: flex; align-items: center; gap: 20px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+    <div style="background-color: #3b5e43; padding: 22px 30px; border-radius: 12px; display: flex; align-items: center; gap: 20px; margin-top: 15px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
         <div style="background-color: white; border-radius: 50%; width: 68px; height: 68px; display: flex; align-items: center; justify-content: center; font-size: 36px; line-height: 1;">💡</div>
         <div>
             <div style="color: white; font-size: 32px; font-weight: bold; line-height: 1.1;">{st.session_state.app_title}</div>
@@ -481,9 +481,9 @@ font-size: 20px !important;
                 "description": f"提供されたマニュアル「{', '.join(file_names)}」（対象システム/ツール: {st.session_state.app_title}）に精通した、専属の優秀なAIFAQ操作説明アシスタントです。"
             }
         else:
-            st.session_state.app_title = "FundMonitor BI"
+            st.session_state.app_title = "汎用AIFAQチャットシステム"
             current_persona = {
-                "description": "現在はFundMonitor BIマニュアルについて説明するお助けAIチャットです。導入方法、AWSの接続手順、データ更新方法、グラフ作成やExcel連動、出力方法について正確に回答します。"
+                "description": "現在は特定のマニュアルは読み込まれていません。アップロードされる多種多様なマニュアルに沿って、操作方法や記載内容に回答する汎用お助けAIFAQアシスタントです。"
             }
 
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
@@ -582,26 +582,8 @@ font-size: 20px !important;
                 """, unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # チャット入力
-        prompt = None
-
-        # 右カラムの内部に美しく内包するチャット入力フォーム
-        with st.form(key="chat_input_form", clear_on_submit=True):
-            input_cols = st.columns([82, 18])
-            with input_cols[0]:
-                user_typed = st.text_input(
-                    "ここに知りたいことを入力してください（例：AWSエラーが出る など）",
-                    label_visibility="collapsed",
-                    placeholder="ここに知りたいことを入力してください（例：AWSエラーが出る など）"
-                )
-            with input_cols[1]:
-                send_submitted = st.form_submit_button("送信")
-
-            if send_submitted and user_typed:
-                prompt = user_typed
-
-        # 送信実行時
-        if prompt:
+        # チャット入力処理（常に最下段にフローティング固定される st.chat_input を採用）
+        if prompt := st.chat_input("ここに知りたいことを入力してください（例：AWSエラーが出る など）"):
             st.session_state.messages.append({"role": "user", "content": prompt})
             
             with chat_placeholder:
