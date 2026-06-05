@@ -217,7 +217,7 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
 【アップロードされた出力フォーマットサンプル】
 {combined_formats}
 ※この出力フォーマットサンプルが提示されている場合は、ユーザーが「これと同じデータ形式やレイアウトを出力したい」と希望しています。
-現在アップロードされている各種マニュアル・参考ドキュメントを参照し、このフォーマットを出力するにはどのような操作、設定、データの選択や加工手順を行えばいいのかを、手順を追って具体的に説明してください。
+現在アップロードされている各種マニュアル・参考ドキュメントを参照し、このフォーマットを出力するにはどのような操作, 設定, データの選択や加工手順を行えばいいのかを、手順を追って具体的に説明してください。
 
 【テーブル（表）の参照と特定に関する絶対ルール】
 1. **「参照テーブルの明記」**: アップロードされた資料には、操作手順や設定値が「表（テーブル形式）」で整理されている箇所が多数あります。ユーザーの質問に答える際、または手順を解説する際には、マニュアル内の **どのテーブル（例：[資料内テーブル #1]、[シート名/テーブル名]、列項目名など）を参照してその判断や数値・手順を導き出したのか** を、回答内で必ず具体的に言及・特定してください。
@@ -253,138 +253,127 @@ Above rules and history will be used to generate the next response.
     return "【混雑エラー】現在AIへのリクエストが連続しています。無料枠の制限を超過したため、1分ほど待ってから再度送信してください。"
 
 
+# --- Rerun処理の安全な抽象化 ---
+def safe_rerun():
+    try:
+        st.rerun()
+    except AttributeError:
+        try:
+            st.experimental_rerun()
+        except AttributeError:
+            pass
+
+
 # --- 5. アプリケーションのメインロジック ---
 def main_app():
     if st.session_state.get("app_terminated", False):
         st.warning("🛑 システムは終了しました。再度ご利用になる場合は、ブラウザをリロード（再読み込み）してください。")
         st.stop()
 
-    # ユニバーサルデザイン（UD）を意識したカラー、フォント、文字サイズ、余白の徹底調整
-    st.markdown("""
-    <style>
-        /* ユニバーサルデザイン用基本フォント & 背景 */
-        .stApp {
-            background-color: #FAFCEE; /* コントラストが柔らかく、目に優しい薄黄緑 */
-            font-family: "BIZ UDゴシック", "BIZ UDPゴシック", "Helvetica Neue", Arial, sans-serif !important;
-            font-size: 18px !important;
-            line-height: 1.6 !important;
-            color: #1A331E !important; /* 高コントラストの深緑文字 */
-        }
-        
-        /* サイドバー */
-        section[data-testid="stSidebar"] {
-            background-color: #E8F5E9 !important;
-            border-right: 3px solid #A5D6A7;
-            font-size: 16px !important;
-        }
-        
-        /* フォームラベルやテキスト入力 */
-        label, p, li, span {
-            font-size: 18px !important;
-            font-weight: 500 !important;
-        }
-        
-        /* サイドバー見出し等 */
-        .sidebar .sidebar-content {
-            font-size: 16px !important;
-        }
-        
-        /* 操作用ボタンのユニバーサルデザイン（大きく押しやすく） */
-        div.stButton > button {
-            background-color: #2E7D32 !important; /* コントラスト比の高い深緑 */
-            color: white !important;
-            border-radius: 25px !important;
-            border: 2px solid #1B5E20 !important;
-            padding: 0.8rem 2.2rem !important;
-            font-size: 18px !important;
-            font-weight: bold !important;
-            transition: all 0.2s;
-            box-shadow: 0px 4px 6px rgba(0,0,0,0.15);
-        }
-        div.stButton > button:hover {
-            background-color: #1B5E20 !important;
-            box-shadow: 0 6px 12px rgba(0,0,0,0.25);
-            transform: translateY(-1px);
-        }
-        
-        /* LINE風チャットコンテナと吹き出しのUD拡大調整 */
-        .chat-container {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            margin-bottom: 30px;
-            width: 100%;
-        }
-        /* 発言者を左右に寄せるための行ラッパー */
-        .chat-row-user {
-            display: flex;
-            justify-content: flex-end;
-            width: 100%;
-        }
-        .chat-row-assistant {
-            display: flex;
-            justify-content: flex-start;
-            width: 100%;
-        }
-        .chat-bubble-user {
-            background-color: #66BB6A; /* コントラストを高めた明るい緑 */
-            color: #052207; /* 濃い文字で可読性を担保 */
-            padding: 16px 22px;
-            border-radius: 22px 22px 0px 22px;
-            max-width: 80%;
-            box-shadow: 0px 3px 6px rgba(0,0,0,0.1);
-            font-size: 18px !important;
-            line-height: 1.6;
-            text-align: left;
-            border: 1px solid #4CAF50;
-        }
-        .chat-bubble-assistant {
-            background-color: #FFFFFF;
-            color: #1B5E20; /* 濃い緑の文字 */
-            padding: 16px 22px;
-            border-radius: 22px 22px 22px 0px;
-            max-width: 80%;
-            box-shadow: 0px 3px 6px rgba(0,0,0,0.1);
-            border: 2px solid #81C784; /* テーブル線やお知らせ枠と親和性の高い太めの境界線 */
-            font-size: 18px !important;
-            line-height: 1.6;
-            text-align: left;
-        }
-        
-        /* チャット吹き出し内のヘッダー（アイコンと名前） - UD特大アイコン用に調整 */
-        .chat-header {
-            font-weight: 800 !important;
-            font-size: 18px !important; /* 文字を少し大きく */
-            margin-bottom: 12px;
-            opacity: 0.95;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: #111111;
-        }
-
-        /* ユニバーサルデザイン用：2倍以上に拡大した特大アイコン（絵文字） */
-        .chat-icon {
-            font-size: 36px !important; /* 従来の15pxから大幅拡大 */
-            display: inline-block;
-            vertical-align: middle;
-            line-height: 1;
-        }
-        
-        /* 入力エリア（チャットインプット）のプレースホルダーとテキスト */
-        textarea {
-            font-size: 18px !important;
-            line-height: 1.5 !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
+    # --- Markdownパースエラーを100%回避するため、CSSのマルチライン行頭のインデント（空白）を完全に除去します ---
+    st.markdown("""<style>
+.stApp {
+background-color: #FAFCEE !important;
+font-family: "BIZ UDゴシック", "BIZ UDPゴシック", "Helvetica Neue", Arial, sans-serif !important;
+font-size: 18px !important;
+line-height: 1.6 !important;
+color: #1A331E !important;
+}
+section[data-testid="stSidebar"] {
+background-color: #E8F5E9 !important;
+border-right: 3px solid #A5D6A7;
+font-size: 16px !important;
+}
+label, p, li, span {
+font-size: 18px !important;
+font-weight: 500 !important;
+}
+.sidebar .sidebar-content {
+font-size: 16px !important;
+}
+div.stButton > button {
+background-color: #2E7D32 !important;
+color: white !important;
+border-radius: 25px !important;
+border: 2px solid #1B5E20 !important;
+padding: 0.8rem 2.2rem !important;
+font-size: 18px !important;
+font-weight: bold !important;
+transition: all 0.2s;
+box-shadow: 0px 4px 6px rgba(0,0,0,0.15);
+}
+div.stButton > button:hover {
+background-color: #1B5E20 !important;
+box-shadow: 0 6px 12px rgba(0,0,0,0.25);
+transform: translateY(-1px);
+}
+.chat-container {
+display: flex;
+flex-direction: column;
+gap: 20px;
+margin-bottom: 30px;
+width: 100%;
+}
+.chat-row-user {
+display: flex;
+justify-content: flex-end;
+width: 100%;
+}
+.chat-row-assistant {
+display: flex;
+justify-content: flex-start;
+width: 100%;
+}
+.chat-bubble-user {
+background-color: #66BB6A;
+color: #052207;
+padding: 16px 22px;
+border-radius: 22px 22px 0px 22px;
+max-width: 80%;
+box-shadow: 0px 3px 6px rgba(0,0,0,0.1);
+font-size: 18px !important;
+line-height: 1.6;
+text-align: left;
+border: 1px solid #4CAF50;
+}
+.chat-bubble-assistant {
+background-color: #FFFFFF;
+color: #1B5E20;
+padding: 16px 22px;
+border-radius: 22px 22px 22px 0px;
+max-width: 80%;
+box-shadow: 0px 3px 6px rgba(0,0,0,0.1);
+border: 2px solid #81C784;
+font-size: 18px !important;
+line-height: 1.6;
+text-align: left;
+}
+.chat-header {
+font-weight: 800 !important;
+font-size: 18px !important;
+margin-bottom: 12px;
+opacity: 0.95;
+display: flex;
+align-items: center;
+gap: 10px;
+color: #111111;
+}
+.chat-icon {
+font-size: 36px !important;
+display: inline-block;
+vertical-align: middle;
+line-height: 1;
+}
+textarea {
+font-size: 18px !important;
+line-height: 1.5 !important;
+}
+</style>""", unsafe_allow_html=True)
 
     # --- 左側サイドバー情報入力メニュー ---
-    st.sidebar.markdown("""
-    <div style="background-color: #1B5E20; padding: 14px; border-radius: 12px; margin-bottom: 18px; text-align: center; border: 2px solid #A5D6A7;">
-        <h3 style="color: white; margin: 0; font-size: 18px; font-weight: bold;">📁 コントロールパネル</h3>
-    </div>
-    """, unsafe_allow_html=True)
+    st.sidebar.markdown("""<div style="background-color: #1B5E20; padding: 14px; border-radius: 12px; margin-bottom: 18px; text-align: center; border: 2px solid #A5D6A7;">
+<h3 style="color: white; margin: 0; font-size: 18px; font-weight: bold;">📁 コントロールパネル</h3>
+</div>""", unsafe_allow_html=True)
 
     st.sidebar.subheader("🔑 APIキーの設定")
     custom_api_key = st.sidebar.text_input(
@@ -464,15 +453,13 @@ def main_app():
             "description": "現在は特定のマニュアルはロードされていません。ロードされる多様なシステム・ツール資料や操作手順、一般的な疑問に対して柔軟に回答する汎用AIFAQアシスタントです。"
         }
 
-    # アプリヘッダー表示 - タイトルの文字サイズをさらに従来比約3倍（110px）に超々巨大化し、最高の存在感と視認性を実現
-    st.markdown(f"""
-    <div style="background-color: #1B5E20; padding: 45px 30px; border-radius: 18px; text-align: center; margin-bottom: 30px; box-shadow: 0px 6px 16px rgba(0,0,0,0.18); border: 3px solid #81C784;">
-        <h1 style="color: white; margin: 0; font-size: 110px; font-weight: 950; line-height: 1.1; letter-spacing: -2px; word-break: break-word;">{st.session_state.app_title}</h1>
-        <p style="color: #E8F5E9; margin: 25px 0 0 0; font-size: 22px; font-weight: bold; opacity: 0.95; letter-spacing: 0.5px;">
-            操作マニュアルを賢く学習し、図表や設定テーブルの参照箇所を特定しながら、疑問を分かりやすく解決します。
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    # --- 💡行頭のすべてのインデント（スペース）を完全に削除した超々巨大タイトルブロック ---
+    st.markdown(f"""<div style="background-color: #1B5E20; padding: 45px 30px; border-radius: 18px; text-align: center; margin-bottom: 30px; box-shadow: 0px 6px 16px rgba(0,0,0,0.18); border: 3px solid #81C784;">
+<h1 style="color: white; margin: 0; font-size: 110px; font-weight: 950; line-height: 1.1; letter-spacing: -2px; word-break: break-word;">{st.session_state.app_title}</h1>
+<p style="color: #E8F5E9; margin: 25px 0 0 0; font-size: 22px; font-weight: bold; opacity: 0.95; letter-spacing: 0.5px;">
+操作マニュアルを賢く学習し、図表や設定テーブルの参照箇所を特定しながら、疑問を分かりやすく解決します。
+</p>
+</div>""", unsafe_allow_html=True)
 
     st.sidebar.markdown("---")
 
@@ -538,7 +525,7 @@ def main_app():
     if st.session_state.format_file_names:
         st.info(f"💡 出力フォーマットサンプル（{', '.join(st.session_state.format_file_names)}）が読み込まれています。チャットで「このサンプルを出力するには？」等と質問してみてください。")
     elif file_names:
-        st.info(f"💡 現在、マニュアル資料（{', '.join(file_names)}）が読み込まれています。学習したシステム・ツール情報、及びマニュアル内の設定テーブルに基づいて적的に案内いたします！")
+        st.info(f"💡 現在、マニュアル資料（{', '.join(file_names)}）が読み込まれています。学習したシステム・ツール情報、及びマニュアル内の設定テーブルに基づいて適確に案内いたします！")
     else:
         st.info(f"💡 マニュアル資料を学習させたい場合は、左側のサイドバーからファイルをアップロードしてください。現在アップロードされたマニュアルはありません。")
 
