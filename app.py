@@ -215,29 +215,41 @@ def main_app():
             flex-direction: column;
             gap: 15px;
             margin-bottom: 20px;
+            width: 100%;
+        }
+        /* 発言者を左右に寄せるための行ラッパー */
+        .chat-row-user {
+            display: flex;
+            justify-content: flex-end;
+            width: 100%;
+        }
+        .chat-row-assistant {
+            display: flex;
+            justify-content: flex-start;
+            width: 100%;
         }
         .chat-bubble-user {
             background-color: #81C784;
             color: #1B5E20;
             padding: 12px 18px;
             border-radius: 18px 18px 0px 18px;
-            align-self: flex-end;
             max-width: 75%;
             box-shadow: 0px 2px 5px rgba(0,0,0,0.05);
             font-size: 15px;
             line-height: 1.5;
+            text-align: left;
         }
         .chat-bubble-assistant {
             background-color: #FFFFFF;
             color: #2E7D32;
             padding: 12px 18px;
             border-radius: 18px 18px 18px 0px;
-            align-self: flex-start;
             max-width: 75%;
             box-shadow: 0px 2px 5px rgba(0,0,0,0.05);
             border: 1px solid #C8E6C9;
             font-size: 15px;
             line-height: 1.5;
+            text-align: left;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -397,13 +409,16 @@ def main_app():
     with chat_placeholder:
         st.markdown('<div class="chat-container">', unsafe_allow_html=True)
         for m in st.session_state.messages:
-            role_class = "chat-bubble-assistant" if m["role"] == "assistant" else "chat-bubble-user"
+            row_class = "chat-row-assistant" if m["role"] == "assistant" else "chat-row-user"
+            bubble_class = "chat-bubble-assistant" if m["role"] == "assistant" else "chat-bubble-user"
             avatar = "🤖 AI" if m["role"] == "assistant" else "💼 ユーザー"
             
             st.markdown(f"""
-            <div class="{role_class}">
-                <div style="font-weight: bold; font-size: 12px; margin-bottom: 5px; opacity: 0.85;">{avatar}</div>
-                <div>{m["content"]}</div>
+            <div class="{row_class}">
+                <div class="{bubble_class}">
+                    <div style="font-weight: bold; font-size: 12px; margin-bottom: 5px; opacity: 0.85;">{avatar}</div>
+                    <div>{m["content"]}</div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
@@ -414,9 +429,11 @@ def main_app():
         
         with chat_placeholder:
             st.markdown(f"""
-            <div class="chat-bubble-user">
-                <div style="font-weight: bold; font-size: 12px; margin-bottom: 5px; opacity: 0.85;">💼 ユーザー</div>
-                <div>{prompt}</div>
+            <div class="chat-row-user">
+                <div class="chat-bubble-user">
+                    <div style="font-weight: bold; font-size: 12px; margin-bottom: 5px; opacity: 0.85;">💼 ユーザー</div>
+                    <div>{prompt}</div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
             
