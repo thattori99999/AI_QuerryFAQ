@@ -237,7 +237,7 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
 【これまでの会話履歴（※直近の重要な会話のみ抽出）】
 {history_text}
 
-上記のルールと履歴を元に、次につづく「AIアシスタント(あなた)」の丁寧な回答を生成してください。
+Above rules and history will be used to generate the next response.
 """
             response = model.generate_content(system_prompt)
             return response.text
@@ -260,7 +260,6 @@ def main_app():
         st.stop()
 
     # ユニバーサルデザイン（UD）を意識したカラー、フォント、文字サイズ、余白の徹底調整
-    # 文字を大きく（18px基準）、行間をゆったり（1.6）、色の高いコントラスト比を維持
     st.markdown("""
     <style>
         /* ユニバーサルデザイン用基本フォント & 背景 */
@@ -465,11 +464,11 @@ def main_app():
             "description": "現在は特定のマニュアルはロードされていません。ロードされる多様なシステム・ツール資料や操作手順、一般的な疑問に対して柔軟に回答する汎用AIFAQアシスタントです。"
         }
 
-    # アプリヘッダー表示 - タイトルの文字サイズを従来比2倍（68px）に超拡大し視認性を大幅強化
+    # アプリヘッダー表示 - タイトルの文字サイズをさらに従来比約3倍（110px）に超々巨大化し、最高の存在感と視認性を実現
     st.markdown(f"""
-    <div style="background-color: #1B5E20; padding: 35px 25px; border-radius: 15px; text-align: center; margin-bottom: 25px; box-shadow: 0px 4px 12px rgba(0,0,0,0.15); border: 2px solid #81C784;">
-        <h1 style="color: white; margin: 0; font-size: 68px; font-weight: 900; line-height: 1.2; letter-spacing: -1px;">{st.session_state.app_title}</h1>
-        <p style="color: #E8F5E9; margin: 15px 0 0 0; font-size: 19px; font-weight: bold; opacity: 0.95;">
+    <div style="background-color: #1B5E20; padding: 45px 30px; border-radius: 18px; text-align: center; margin-bottom: 30px; box-shadow: 0px 6px 16px rgba(0,0,0,0.18); border: 3px solid #81C784;">
+        <h1 style="color: white; margin: 0; font-size: 110px; font-weight: 950; line-height: 1.1; letter-spacing: -2px; word-break: break-word;">{st.session_state.app_title}</h1>
+        <p style="color: #E8F5E9; margin: 25px 0 0 0; font-size: 22px; font-weight: bold; opacity: 0.95; letter-spacing: 0.5px;">
             操作マニュアルを賢く学習し、図表や設定テーブルの参照箇所を特定しながら、疑問を分かりやすく解決します。
         </p>
     </div>
@@ -533,13 +532,13 @@ def main_app():
     if "messages" not in st.session_state:
         st.session_state.messages = [{
             "role": "assistant", 
-            "content": "汎用 AIFAQチャットシステムへようこそ！お手元の操作マニュアルや資料（Word, PDF, Excel, CSV, PPT等）を左側のメニューからアップロードしていただければ、即座にその内容を学習した専用 of 回答アシスタントとしてお答えいたします。\n\n本システムは図表（テーブル）の分析機能を強化しており、案内手順の根拠となったマニュアル内の表を特定してお答えします。\nまた、「再現したい成果物の出力サンプル」をアップロードしていただくことで、それをマニュアルに沿って作成する手順も詳しくお調べします。"
+            "content": "汎用 AIFAQチャットシステムへようこそ！お手元の操作マニュアルや資料（Word, PDF, Excel, CSV, PPT等）を左側のメニューからアップロードしていただければ、即座にその内容を学習した専用の回答アシスタントとしてお答えいたします。\n\n本システムは図表（テーブル）の分析機能を強化しており、案内手順の根拠となったマニュアル内の表を特定してお答えします。\nまた、「再現したい成果物の出力サンプル」をアップロードしていただくことで、それをマニュアルに沿って作成する手順も詳しくお調べします。"
         }]
 
     if st.session_state.format_file_names:
         st.info(f"💡 出力フォーマットサンプル（{', '.join(st.session_state.format_file_names)}）が読み込まれています。チャットで「このサンプルを出力するには？」等と質問してみてください。")
     elif file_names:
-        st.info(f"💡 現在、マニュアル資料（{', '.join(file_names)}）が読み込まれています。学習したシステム・ツール情報、及びマニュアル内の設定テーブルに基づいて的確に案内いたします！")
+        st.info(f"💡 現在、マニュアル資料（{', '.join(file_names)}）が読み込まれています。学習したシステム・ツール情報、及びマニュアル内の設定テーブルに基づいて적的に案内いたします！")
     else:
         st.info(f"💡 マニュアル資料を学習させたい場合は、左側のサイドバーからファイルをアップロードしてください。現在アップロードされたマニュアルはありません。")
 
