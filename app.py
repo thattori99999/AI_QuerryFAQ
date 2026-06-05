@@ -118,6 +118,49 @@ def get_safe_model_name(api_key):
         return 'gemini-1.5-flash'
 
 
+# --- 3-2. ファイル名からメインのシステム・サービス名を抽出するクレンジング関数（予備処理） ---
+def clean_service_name(filename):
+    base = os.path.splitext(filename)[0]
+    # 一般的なドキュメント名称やノイズを正規表現で排除
+    patterns = [
+        r"(操作)?マニュアル", r"取扱説明書", r"手順書", r"仕様書", r"概要書", r"説明書",
+        r"【.*】", r"\[.*\]", r"（.*）", r"\(.*\)",
+        r"[vV]er\.?\d+(\.\d+)*", r"\d{8}", r"\d{6}",
+        r"[-_]"
+    ]
+    cleaned = base
+    for pat in patterns:
+        cleaned = re.sub(pat, " ", cleaned)
+    cleaned = cleaned.strip()
+    return cleaned if cleaned else base
+
+
+# --- 3-3. マニュアルテキストを解析して、メインの製品・システム名をGeminiからスマートに特定する関数 ---
+def extract_service_name_via_ai(text, default_name, api_key):
+    try:
+        genai.configure(api_key=api_key)
+        target_model = get_safe_model_name(api_key)
+        model = genai.GenerativeModel(target_model)
+        
+        # テキストの先頭1500文字程度を利用して推測
+        prompt = f"""
+以下は、ユーザーからアップロードされたマニュアルまたは資料テキストの冒頭部分です。
+この資料が「何のツール」「何のサービス」または「どのシステム」について説明しているものか、最もメインとなる固有名称を日本語で1つだけ見つけ出してください。
+余計な説明、前置き、記号、拡張子などは絶対に含めず、純粋な名称のみを返してください。（例：「軽技WEB」「預かり資産トータルクエリーサービス」など）
+最大でも20文字以内とします。特定が難しい場合は「{default_name}」を返してください。
+
+【資料テキストの一部】
+{text[:1500]}
+"""
+        response = model.generate_content(prompt)
+        res_text = response.text.strip()
+        res_text = re.sub(r"[`'\"]", "", res_text)  # 引用符の除去
+        res_text = res_text.split("\n")[0].strip()
+        return res_text if res_text else default_name
+    except:
+        return default_name
+
+
 # --- 4. AI回答生成ロジック (自動リトライ・履歴ウィンドウ削減版 / 汎用化プロンプト) ---
 def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_key):
     target_model = get_safe_model_name(api_key)
@@ -153,6 +196,11 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
 {combined_formats}
 ※この出力フォーマットサンプルが提示されている場合は、ユーザーが「これと同じデータ形式やレイアウトを出力したい」と希望しています。
 現在アップロードされている各種マニュアル・参考ドキュメントを参照し、このフォーマットを出力するにはどのような操作、設定、データの選択や加工手順を行えばいいのかを、手順を追って具体的に説明してください。
+
+【預かり資産トータルクエリーサービスに関する絶対判定ルール】
+もしアップロードされた資料の内容や質問の文脈が「預かり資産トータルクエリーサービス」に関連する場合、ユーザーのやりたいデータ抽出や操作要望に対して、以下の思考プロセスを厳格に適用して回答を構成してください。
+1. **「標準クエリ（約200種類）の確認」**: まず第一に、ユーザーのやりたい要件にそのまま合致する既存の標準クエリがすでに提供されているかを判断して案内してください。
+2. **「既存クエリの修正・加工方法」**: もし完全に合致する既存の標準クエリがそのままでは見つからない場合、どの標準クエリをベース（ひな形）に選択し、それをどのように修正（項目追加、結合、フィルター条件の編集など）すれば目的の結果が得られるかを、具体的かつ分かりやすい手順として説明してください。
 
 【回答の絶対ルール】
 1. ユーザーの質問に対し、アップロードされたマニュアルの情報を最も信頼できる「絶対の基準（最優先情報）」として参照し、正確に回答を構成してください。
@@ -311,18 +359,32 @@ def main_app():
             except Exception as e:
                 st.sidebar.error(f"❌ {f.name} の読込失敗: {str(e)}")
 
-    # 読み込まれたマニュアルに基づいてタイトルを動的に変更
+    # 読み込まれたマニュアルに基づいてタイトルを賢く自動抽出・変更
     if file_names:
-        # 代表して最初のファイル名（拡張子なし）を取り出して、タイトルに設定
-        main_file_base = os.path.splitext(file_names[0])[0]
-        st.session_state.app_title = f"📖 {main_file_base} 操作説明 AIFAQ"
+        # 新しくファイルを読み込んだ際、セッションキャッシュを更新
+        if "last_processed_files" not in st.session_state or st.session_state.last_processed_files != file_names:
+            # 1. まずは正規表現によるクレンジングをベースラインにする
+            default_service_name = clean_service_name(file_names[0])
+            
+            # 2. APIキーが有効な場合は、AIを活用してドキュメントの本当のシステム・サービス名を正確に特定
+            if ACTIVE_API_KEY and all_extra_text:
+                joined_samples = "\n".join(all_extra_text)
+                detected_name = extract_service_name_via_ai(joined_samples, default_service_name, ACTIVE_API_KEY)
+                st.session_state.detected_service_name = detected_name
+            else:
+                st.session_state.detected_service_name = default_service_name
+                
+            st.session_state.last_processed_files = file_names
+            
+        # アプリタイトルの設定
+        st.session_state.app_title = f"📖 {st.session_state.detected_service_name} 操作説明 AIFAQ"
         current_persona = {
-            "description": f"アップロードされたマニュアル「{', '.join(file_names)}」に完全に精通した専門の操作説明AIFAQです。"
+            "description": f"提供されたマニュアル「{', '.join(file_names)}」（対象システム/ツール: {st.session_state.detected_service_name}）に精通した、専属の優秀なAIFAQ操作説明アシスタントです。"
         }
     else:
         st.session_state.app_title = "🤖 汎用 AIFAQチャットシステム"
         current_persona = {
-            "description": "現在は特定のマニュアルはロードされていません。ユーザーからロードされる操作手順書や、一般的な操作に関する問い合わせに柔軟に対応する汎用FAQアシスタントです。"
+            "description": "現在は特定のマニュアルはロードされていません。ロードされる多様なシステム・ツール資料や操作手順、一般的な疑問に対して柔軟に回答する汎用AIFAQアシスタントです。"
         }
 
     # アプリヘッダー表示
@@ -330,7 +392,7 @@ def main_app():
     <div style="background-color: #2E7D32; padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 25px; box-shadow: 0px 4px 10px rgba(0,0,0,0.08);">
         <h1 style="color: white; margin: 0; font-size: 28px;">{st.session_state.app_title}</h1>
         <p style="color: #E8F5E9; margin: 8px 0 0 0; font-size: 15px;">
-            マニュアル資料や操作手順書を読み込み、質問に対してスムーズに回答するAIFAQシステムです。
+            マニュアル資料や操作手順書を自動でインテリジェントに学習し、チャット形式で分かりやすく回答します。
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -399,7 +461,7 @@ def main_app():
     if st.session_state.format_file_names:
         st.info(f"💡 出力フォーマットサンプル（{', '.join(st.session_state.format_file_names)}）が読み込まれています。チャットで「このサンプルを出力するには？」等と質問してみてください。")
     elif file_names:
-        st.info(f"💡 現在、マニュアル資料（{', '.join(file_names)}）が読み込まれています。学習した情報に基づいて的確に案内いたします！")
+        st.info(f"💡 現在、マニュアル資料（{', '.join(file_names)}）が読み込まれています。学習したシステム・ツール情報に基づいて的確に案内いたします！")
     else:
         st.info(f"💡 マニュアル資料を学習させたい場合は、左側のサイドバーからファイルをアップロードしてください。現在アップロードされたマニュアルはありません。")
 
