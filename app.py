@@ -40,7 +40,7 @@ def load_api_key():
 INI_KEY = load_api_key()
 EMBEDDED_API_KEY = INI_KEY
 
-# --- 2. 各ファイル抽出関数 (CSVの読み込みを拡張) ---
+# --- 2. 各ファイル抽出関数 ---
 def extract_from_docx(file):
     doc = Document(file)
     return "\n".join([para.text for para in doc.paragraphs])
@@ -65,13 +65,18 @@ def extract_from_excel(file):
         text_data.append(f"--- シート名: {sheet_name} ---\n{df.to_string(index=False)}")
     return "\n".join(text_data)
 
+# 追加：CSVファイルの抽出関数（Shift-JISとUTF-8の両方に対応するセーフモード）
 def extract_from_csv(file):
-    # シニア層が作成した様々なエンコーディングに対応できるよう柔軟に読み込み
     try:
+        # まずはUTF-8で試みる
         df = pd.read_csv(file, encoding='utf-8')
-    except UnicodeDecodeError:
-        file.seek(0)
-        df = pd.read_csv(file, encoding='shift_jis')
+    except Exception:
+        try:
+            # 失敗した場合はShift-JISで再試行
+            file.seek(0)
+            df = pd.read_csv(file, encoding='shift_jis')
+        except Exception as e:
+            return f"CSVファイルの読み込みに失敗しました（文字コードエラー）: {str(e)}"
     return df.to_string(index=False)
 
 # --- 404エラーを回避しつつ、利用可能なモデル名を安全に取得する関数 ---
@@ -89,7 +94,8 @@ def get_safe_model_name(api_key):
         return 'gemini-1.5-flash'
 
 # --- 3. AI回答生成ロジック (自動リトライ・履歴ウィンドウ削減版) ---
-def get_ai_roleplay_response(messages, persona, product_docs, api_key):
+# ※ 引数 format_sample を追加し、出力テンプレートに沿った回答ができるようプロンプトを拡張
+def get_ai_roleplay_response(messages, persona, product_docs, api_key, format_sample=None):
     target_model = get_safe_model_name(api_key)
     
     # トークン爆発を防ぐため、AIに送る「過去の履歴」を最新の6発言（3往復）に限定
@@ -107,6 +113,18 @@ def get_ai_roleplay_response(messages, persona, product_docs, api_key):
                 role_label = "AIアシスタント(あなた)" if m["role"] == "assistant" else "本部担当者(ユーザー)"
                 history_text += f"{role_label}: {m['content']}\n"
 
+            # フォーマットサンプルの指示ブロックを作成
+            format_instruction = ""
+            if format_sample:
+                format_instruction = f"""
+【最優先：出力フォーマットのルール】
+ユーザーから出力フォーマットのサンプルが指定されています。
+回答を作成する際は、以下のサンプル内容、項目名、構成、トンマナを「必ず」参考にして、同様の出力形式で結果を出力してください：
+--- 出力フォーマットサンプル 開始 ---
+{format_sample}
+--- 出力フォーマットサンプル 終了 ---
+"""
+
             system_prompt = f"""
 あなたは「預かり資産トータルクエリーサービス」およびBIツール「軽技WEB」に精通した熟練のAIFAQアシスタントです。
 金融機関の本部担当者（ユーザー）からのシステム操作、データ抽出、クエリ、エラー等に関する質問に対して、正確かつ分かりやすく回答してください。
@@ -122,12 +140,15 @@ def get_ai_roleplay_response(messages, persona, product_docs, api_key):
 【アップロードされた各種マニュアル・参考ドキュメント（最優先参照情報）】
 {combined_docs}
 
+{format_instruction}
+
 【回答の絶対ルール】
 1. ユーザー（本部担当者）の質問に対し、アップロードされたマニュアルの情報を最優先に参照して回答を構成してください。
 2. あくまで「預かり資産トータルクエリーサービス」および「軽技WEB」「Fund Organizer」の文脈に沿って回答してください。一般的なIT知識でなく、本サービスの仕様を重視してください。
 3. 専門的な内容であっても、金融機関の業務担当者がスムーズに作業を進められるよう、具体的な手順や選択すべきクエリ（標準クエリ約200種）など、実務に即した丁寧な表現で回答してください。
-4. あまりに難しい専門用語は避け、シニアや業務に不慣れな方でも理解できるよう、手順を①②③と箇条書きで分かりやすく整理して伝えてください。
+4. アップロードされた情報だけで判断がつかない不確実な事項については、知ったかぶりをせず、「専門のサポート窓口」へ案内するなどの対応を含めてください。
 5. AIとしてのメタな発言（例：「以上がマニュアルに基づく回答です」など）は含めず、ユーザーへの親切な回答テキストのみを出力してください。
+6. シニア層や不慣れな担当者でも一目で操作がわかるよう、手順は「①、②、③」などの箇条書きを使い、専門用語には分かりやすい言葉で補足を添えてください。
 
 【これまでの会話履歴（※直近の重要な会話のみ抽出）】
 {history_text}
@@ -147,69 +168,175 @@ def get_ai_roleplay_response(messages, persona, product_docs, api_key):
             
     return "【混雑エラー】現在AIへのリクエストが連続しています。無料枠の制限を超過したため、1分ほど待ってから再度送信してください。"
 
-# --- 4. 画面構築 (Streamlit UI ＆ あたたかみのあるシニア向けデザインCSS) ---
-st.set_page_config(page_title="かんたん操作案内 AIお助けチャット", layout="wide")
+# --- 4. 画面構築 (Streamlit UI) ---
+# ページ設定
+st.set_page_config(
+    page_title="預かり資産トータルクエリーサービス らくらくAIFAQ", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# シニア向け：大きな文字、親しみやすいカラー（アイボリー・ブラウン・LINE風グリーン）の適用
-st.markdown("""
-    <style>
-    /* 全体の背景色とフォントサイズ調整 */
-    .stApp {
-        background-color: #FDFBF7; /* 温かみのあるアイボリー */
-    }
-    html, body, [class*="css"], p, ul, li {
-        font-size: 18px !important; /* シニア向けに文字を大きく */
-        color: #4A3E3D !important; /* 視認性の高いダークブラウン */
-        font-family: 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
-    }
-    h1 {
-        font-size: 32px !important;
-        color: #5C4033 !important; /* 濃いブラウン */
+# セッション状態の初期化
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {
+            "role": "assistant", 
+            "content": "「預かり資産トータルクエリーサービス」らくらく相談窓口へようこそ！\n\n画面の左側で「マニュアル」を読み込ませることで、あなた専用のガイドブックになります。\n操作方法や画面の使い方のほか、「こういう風にデータを出したい」といったご質問にいつでもお答えしますよ。お気軽に何でも聞いてくださいね。"
+        }
+    ]
+
+if "format_file_key" not in st.session_state:
+    st.session_state.format_file_key = 0
+
+if "format_sample" not in st.session_state:
+    st.session_state.format_sample = ""
+
+# --- 5. シニア向け・あたたかみのある緑ベースのカスタムCSS ---
+# ラジオボタンで文字サイズを選択できるようにする
+st.sidebar.markdown("### 🔤 画面の文字の大きさ")
+font_size_choice = st.sidebar.radio(
+    "文字のサイズを選んでください：",
+    ["ふつう", "大きく", "とても大きく"],
+    index=1, # デフォルトを「大きく」にして見やすさを最優先に
+    horizontal=True,
+    label_visibility="collapsed"
+)
+
+# 選択に応じたCSSフォントサイズの設定
+if font_size_choice == "ふつう":
+    text_size = "16px"
+    title_size = "26px"
+    bubble_padding = "12px"
+elif font_size_choice == "大きく":
+    text_size = "20px"
+    title_size = "30px"
+    bubble_padding = "16px"
+else: # とても大きく
+    text_size = "24px"
+    title_size = "36px"
+    bubble_padding = "20px"
+
+# カスタムスタイルの注入 (緑ベースのやさしい3色デザイン)
+# 1. メイン背景色: やさしいアイボリーグリーン（#F4F8F4）
+# 2. テーマカラー（プライマリ）: 落ち着いた深緑（#2D6A4F）
+# 3. 吹き出しカラー: LINE風の親しみやすいライトグリーン（#95D5B2）
+st.markdown(f"""
+<style>
+    /* 全体フォント設定 */
+    html, body, [class*="css"], .stMarkdown p, .stButton button {{
+        font-size: {text_size} !important;
+        line-height: 1.6 !important;
+        color: #2D312E !important; /* 目が疲れないソフトな黒 */
+    }}
+    
+    /* アプリ全体の背景色 */
+    .stApp {{
+        background-color: #F4F8F4 !important;
+    }}
+    
+    /* サイドバーの背景色と境界線 */
+    section[data-testid="stSidebar"] {{
+        background-color: #E8F0E8 !important;
+        border-right: 2px solid #D2E2D2 !important;
+    }}
+    
+    /* ヘッダータイトル */
+    .app-title {{
+        font-size: {title_size} !important;
+        color: #1B4332 !important;
         font-weight: bold;
-    }
-    /* サイドバーの背景デザイン */
-    [data-testid="stSidebar"] {
-        background-color: #F5EBE6 !important; /* 薄いベージュ */
-        border-right: 2px solid #E6D5CC;
-    }
-    /* LINE風のチャットバブル */
-    .chat-bubble-user {
-        background-color: #85E292 !important; /* LINE風の優しいグリーン */
-        color: #111111 !important;
-        padding: 14px 20px;
-        border-radius: 18px 18px 2px 18px;
-        margin: 8px 0px;
-        display: inline-block;
-        max-width: 80%;
-        box-shadow: 1px 1px 4px rgba(0,0,0,0.1);
-    }
-    .chat-bubble-assistant {
-        background-color: #FFFFFF !important; /* 白色バブル */
-        color: #4A3E3D !important;
-        padding: 14px 20px;
-        border-radius: 18px 18px 18px 2px;
-        margin: 8px 0px;
-        display: inline-block;
-        max-width: 80%;
-        border: 1px solid #E6D5CC;
-        box-shadow: 1px 1px 4px rgba(0,0,0,0.05);
-    }
-    /* ボタンを目立たせる */
-    .stButton>button {
-        background-color: #8C6A5C !important;
-        color: white !important;
-        font-size: 18px !important;
+        margin-bottom: 5px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }}
+    
+    /* サブ説明文 */
+    .app-subtitle {{
+        font-size: calc({text_size} - 2px) !important;
+        color: #406040 !important;
+        margin-bottom: 20px;
+        background-color: #EAF4EA;
+        padding: 10px 15px;
         border-radius: 8px;
-        padding: 10px 24px;
-        border: none;
-    }
-    </style>
+        border-left: 5px solid #2D6A4F;
+    }}
+
+    /* LINE風チャット吹き出しのカスタマイズ */
+    div[data-testid="stChatMessage"] {{
+        border-radius: 20px !important;
+        padding: {bubble_padding} !important;
+        margin-bottom: 15px !important;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05) !important;
+    }}
+    
+    /* ユーザー発言（右側・黄緑色の吹き出し） */
+    div[data-testid="stChatMessage"]:has(span[data-testid="chat-avatar-user"]) {{
+        background-color: #A7E0A6 !important; /* LINE風の優しい緑 */
+        margin-left: 15% !important;
+        border: 1px solid #90C88F !important;
+    }}
+    
+    /* アシスタント発言（左側・白色の吹き出し） */
+    div[data-testid="stChatMessage"]:has(span[data-testid="chat-avatar-assistant"]) {{
+        background-color: #FFFFFF !important;
+        margin-right: 15% !important;
+        border: 1px solid #E0ECE0 !important;
+    }}
+    
+    /* ボタンのスタイルカスタマイズ */
+    .stButton button {{
+        background-color: #2D6A4F !important;
+        color: #FFFFFF !important;
+        border-radius: 12px !important;
+        padding: 10px 24px !important;
+        font-weight: bold !important;
+        border: none !important;
+        box-shadow: 0 3px 6px rgba(0,0,0,0.1) !important;
+        transition: all 0.2s ease;
+    }}
+    .stButton button:hover {{
+        background-color: #1B4332 !important;
+        transform: translateY(-1px);
+    }}
+    
+    /* 入力エリアの強調表示 */
+    div[data-testid="stChatInput"] textarea {{
+        font-size: {text_size} !important;
+        border: 2px solid #2D6A4F !important;
+        border-radius: 12px !important;
+        background-color: #FFFFFF !important;
+    }}
+
+    /* サイドバーの見出し調整 */
+    .sidebar-heading {{
+        color: #1B4332 !important;
+        font-weight: bold !important;
+        font-size: calc({text_size} + 2px) !important;
+        margin-top: 15px !important;
+        margin-bottom: 5px !important;
+        border-bottom: 2px solid #2D6A4F;
+        padding-bottom: 3px;
+    }}
+    
+    /* 読み込み完了バッジ風表示 */
+    .load-success {{
+        background-color: #D8F3DC !important;
+        color: #1B4332 !important;
+        padding: 5px 10px;
+        border-radius: 5px;
+        font-size: calc({text_size} - 2px);
+        margin-bottom: 5px;
+        border: 1px solid #B7E4C7;
+    }}
+</style>
 """, unsafe_allow_html=True)
 
-st.title("🍵 かんたんマニュアル案内室 (AIお助けチャット)")
-st.markdown("ファイル（マニュアル）を左側から読み込ませるだけで、AIがLINEのように分かりやすく操作方法を教えてくれます。")
+# メインエリアヘッダー
+st.markdown('<div class="app-title">🍵 らくらく操作ガイド AIチャット窓口</div>', unsafe_allow_html=True)
+st.markdown('<div class="app-subtitle">投資信託の集計システムや「軽技WEB」に関する疑問を、お手元のマニュアルを参考にしてAIがやさしく解決します。</div>', unsafe_allow_html=True)
 
-# --- 5. 固定ペルソナ情報設定 ---
+# --- 6. 固定ペルソナ情報設定 ---
 current_persona = {
     "service_name": "預かり資産トータルクエリーサービス",
     "overview": "軽技WEBというBIツールを利用した、投資信託の実績集計などが行える金融機関の本部担当者向けサービス。",
@@ -217,102 +344,134 @@ current_persona = {
     "features": "①約200の標準クエリから業務要件に合わせたクエリを選択して実行\n②標準クエリを編集しフレキシブルに加工・保存が可能\n③データ取得結果をCSV/Excel形式で保存が可能\n④スケジュール実行で業務の効率化を実現\n⑤専門の担当者による手厚いサポート"
 }
 
-# --- 6. 左側メニュー（サイドバー）の構築 ---
-st.sidebar.markdown("### 🔑 個別のAPIキー設定")
-st.sidebar.markdown("<small>ご自身のAPIキーをお持ちの場合は入力してください。空欄の場合は自動的に標準のキーを使用します。</small>", unsafe_allow_html=True)
-custom_api_key = st.sidebar.text_input("Gemini API キー", type="password", key="custom_key")
+# --- 7. サイドバー機能 (情報入力メニュー) ---
+st.sidebar.markdown('<div class="sidebar-heading">🔑 APIキーの設定</div>', unsafe_allow_html=True)
+st.sidebar.markdown("<small style='color:#555;'>※未入力の場合は自動的にシステムのデフォルトキーを使用します。</small>", unsafe_allow_html=True)
+user_api_key = st.sidebar.text_input(
+    "Gemini APIキー",
+    type="password",
+    placeholder="AIの鍵をお持ちなら入力してください",
+    help="入力されたキーを最優先で使用します。空欄の場合は標準の共有キーが使われます。",
+    label_visibility="collapsed"
+)
 
-# APIキーの優先判定ロジック
-if custom_api_key.strip():
-    ACTIVE_API_KEY = custom_api_key.strip()
-else:
-    ACTIVE_API_KEY = EMBEDDED_API_KEY
+# APIキー決定ロジック
+# 入力があれば最優先で使用。なければロード済みのデフォルト(EMBEDDED_API_KEY)を使用。
+active_api_key = user_api_key if user_api_key else EMBEDDED_API_KEY
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 📁 マニュアル・ドキュメント読込")
-st.sidebar.markdown("<small>操作の案内書や、CSV、Excel、PDFなどの各種資料をここにドラッグ＆ドロップしてください。</small>", unsafe_allow_html=True)
+st.sidebar.markdown('<div class="sidebar-heading">📁 操作マニュアルの読み込み</div>', unsafe_allow_html=True)
+st.sidebar.markdown("<small style='color:#555;'>クエリーマニュアルや軽技WEB操作手順書などをここから取り込めます。</small>", unsafe_allow_html=True)
 
 uploaded_files = st.sidebar.file_uploader(
-    "ここへファイルを重ねてください", 
+    "マニュアル資料 (Word, PDF, PPT, Excel, CSV)", 
     type=["docx", "pdf", "pptx", "xlsx", "xls", "csv"], 
     accept_multiple_files=True,
-    key="file_uploader"
+    key="file_uploader",
+    label_visibility="collapsed"
 )
 
 all_extra_text = []
 if uploaded_files:
+    st.sidebar.markdown("<div style='margin-top: 10px; font-weight: bold;'>📖 読み込み中のマニュアル:</div>", unsafe_allow_html=True)
     for f in uploaded_files:
         try:
-            if f.name.endswith(".docx"): content = extract_from_docx(f)
-            elif f.name.endswith(".pdf"): content = extract_from_pdf(f)
-            elif f.name.endswith(".pptx"): content = extract_from_pptx(f)
-            elif f.name.endswith((".xlsx", ".xls")): content = extract_from_excel(f)
-            elif f.name.endswith(".csv"): content = extract_from_csv(f)
+            if f.name.endswith(".docx"): 
+                content = extract_from_docx(f)
+            elif f.name.endswith(".pdf"): 
+                content = extract_from_pdf(f)
+            elif f.name.endswith(".pptx"): 
+                content = extract_from_pptx(f)
+            elif f.name.endswith((".xlsx", ".xls")): 
+                content = extract_from_excel(f)
+            elif f.name.endswith(".csv"):
+                content = extract_from_csv(f)
+            else:
+                content = ""
             
             all_extra_text.append(f"--- ファイル名: {f.name} ---\n{content}")
-            st.sidebar.success(f"⭕ 読み込みました: {f.name}")
+            st.sidebar.markdown(f'<div class="load-success">✔️ 読込完了: {f.name}</div>', unsafe_allow_html=True)
         except Exception as e:
-            st.sidebar.error(f"❌ {f.name} の読込失敗")
+            st.sidebar.error(f"❌ {f.name} の読み込みに失敗しました。")
 
-st.sidebar.markdown("---")
-if st.sidebar.button("🛑 アプリを安全に終了する"):
-    st.sidebar.warning("システムを終了します。窓を閉じてください。")
+# --- 出力フォーマットサンプルの取り込み・確認・クリア機能 ---
+st.sidebar.markdown('<div class="sidebar-heading">📝 出力フォーマットの指定</div>', unsafe_allow_html=True)
+st.sidebar.markdown("<small style='color:#555;'>AIに決まった形式で回答させたい場合は、参考となるサンプルファイルを取り込めます。</small>", unsafe_allow_html=True)
+
+# セッションキーをインクリメントすることでアップローダーをプログラムからクリアする仕組み
+format_file = st.sidebar.file_uploader(
+    "出力サンプルの取り込み (テキストまたはCSV)",
+    type=["txt", "csv", "docx"],
+    key=f"format_uploader_{st.session_state.format_file_key}",
+    label_visibility="collapsed"
+)
+
+# アップロードされたファイルをセッション状態に保存
+if format_file:
+    try:
+        if format_file.name.endswith(".txt"):
+            st.session_state.format_sample = format_file.read().decode('utf-8', errors='ignore')
+        elif format_file.name.endswith(".csv"):
+            st.session_state.format_sample = extract_from_csv(format_file)
+        elif format_file.name.endswith(".docx"):
+            st.session_state.format_sample = extract_from_docx(format_file)
+        st.sidebar.success("✔️ 出力サンプルを取り込みました！")
+    except Exception as e:
+        st.sidebar.error("サンプルファイルの読み込みに失敗しました。")
+
+# 読み込んだサンプルの内容確認
+if st.session_state.format_sample:
+    with st.sidebar.expander("🔍 取り込み中のフォーマットを確認"):
+        st.text_area(
+            "現在のサンプル内容",
+            value=st.session_state.format_sample,
+            height=150,
+            disabled=True,
+            label_visibility="collapsed"
+        )
+    
+    # クリアボタン
+    if st.sidebar.button("🧹 出力サンプルを消去する", use_container_width=True):
+        st.session_state.format_sample = ""
+        st.session_state.format_file_key += 1 # キーを変更してファイルアップローダーを強制リセット
+        st.rerun()
+
+# 区切り線とアプリ終了ボタン
+st.sidebar.markdown("<br><hr>", unsafe_allow_html=True)
+if st.sidebar.button("🛑 アプリを終了する", use_container_width=True):
+    st.sidebar.warning("システムを終了します。このブラウザを閉じてください。")
     os.kill(os.getpid(), signal.SIGINT)
 
-# --- 7. セッション状態の初期化 ---
-if "messages" not in st.session_state:
-    st.session_state.messages = [{
-        "role": "assistant", 
-        "content": "「預かり資産トータルクエリーサービス」の案内室へようこそ！お困りの操作や、調べたい内容について、LINEのように下の欄へ何でも打ち込んでくださいね。"
-    }]
-
-# --- 8. メインエリアのチャットレイアウト (LINE風表示への最適化) ---
+# --- 8. メインエリアのチャットレイアウト ---
+# マニュアル読み込み状態をユーザーにわかりやすくガイド
 if not uploaded_files:
-    st.info(f"💡 まだマニュアル資料が読み込まれていません。お持ちの資料がある場合は、画面左側のメニューから追加できます。")
+    st.info("💡 左メニューの『操作マニュアルの読み込み』から資料をアップロードすると、さらに詳しい手順まで正確に案内できるようになります。")
 else:
-    st.success(f"✨ 現在 {len(uploaded_files)} 件の資料を元にAIが回答できます。")
+    st.success(f"📂 現在 {len(uploaded_files)} 個のマニュアル資料を基に回答を作成します。")
 
-# 過去のメッセージ表示
+# チャットメッセージの履歴描画
 for m in st.session_state.messages:
-    if m["role"] == "user":
-        # 右寄せのユーザー発言（LINE風）
-        st.markdown(f"""
-            <div style="text-align: right;">
-                <div class="chat-bubble-user">
-                    <b>👤 あなた:</b><br>{m['content']}
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-    else:
-        # 左寄せのAIアシスタント発言
-        st.markdown(f"""
-            <div style="text-align: left;">
-                <div class="chat-bubble-assistant">
-                    <b>🤖 案内AI:</b><br>{m['content']}
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
+    role = "assistant" if m["role"] == "assistant" else "user"
+    avatar = "🤖" if role == "assistant" else "👤" # シニア層にも直感的にわかるアバターに変更
+    with st.chat_message(role, avatar=avatar):
+        st.markdown(m["content"])
 
-# 新規入力フォーム
-if prompt := st.chat_input("ここに質問したいことを書いて、右の紙飛行機マークを押してください"):
-    # ユーザーの発言を即時追加
+# 質問の入力欄
+if prompt := st.chat_input("ここに質問したいことを書いて「送信」を押してください（例：データのダウンロード方法は？）"):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    st.markdown(f"""
-        <div style="text-align: right;">
-            <div class="chat-bubble-user">
-                <b>👤 あなた:</b><br>{prompt}
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+    with st.chat_message("user", avatar="👤"):
+        st.markdown(prompt)
 
-    # 返答の生成
-    with st.spinner("マニュアルを確認して、分かりやすい言葉で回答を作っています。少しお待ちください..."):
-        res = get_ai_roleplay_response(
-            st.session_state.messages, 
-            current_persona, 
-            all_extra_text, 
-            ACTIVE_API_KEY
-        )
+    # アシスタントの返答作成
+    with st.chat_message("assistant", avatar="🤖"):
+        with st.spinner("マニュアルから正しい操作方法を調べています。少々お待ちください..."):
+            res = get_ai_roleplay_response(
+                st.session_state.messages, 
+                current_persona, 
+                all_extra_text, 
+                active_api_key, # 優先判定後のAPIキーを使用
+                format_sample=st.session_state.format_sample if st.session_state.format_sample else None
+            )
+        st.markdown(res)
         
     st.session_state.messages.append({"role": "assistant", "content": res})
     st.rerun()
