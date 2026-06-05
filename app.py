@@ -4,90 +4,12 @@ import streamlit as st
 # --- 【最優先ルール】Streamlitのページ構成設定は、他のあらゆるコマンドより先に最上部で実行します ---
 st.set_page_config(page_title="預かり資産トータルクエリーサービス AIFAQ", layout="wide")
 
-# --- 外部ライブラリの安全なインポート (インポートエラーによるアプリ起動即死を完全に回避するセーフガード) ---
-import_errors = []
-
-try:
-    import pandas as pd
-except ImportError:
-    import_errors.append("pandas")
-    pd = None
-
-try:
-    import google.generativeai as genai
-    from google.api_core import exceptions  # Rate Limit(429) エラーを確実に捕捉するため
-except Exception:
-    import_errors.append("google-generativeai")
-    genai = None
-    exceptions = None
-
-try:
-    from docx import Document
-except ImportError:
-    import_errors.append("python-docx")
-    Document = None
-
-try:
-    from PyPDF2 import PdfReader
-except ImportError:
-    import_errors.append("PyPDF2")
-    PdfReader = None
-
-try:
-    from pptx import Presentation
-except ImportError:
-    import_errors.append("python-pptx")
-    Presentation = None
-
-# Excelパース用のopenpyxl確認
-try:
-    import openpyxl
-except ImportError:
-    import_errors.append("openpyxl")
-    openpyxl = None
-
 import io
 import configparser
 import os
 import signal
 import re
 import time  # リトライ待機（スリープ）処理のため
-
-
-# --- 例外処理の安全なフォールバック設計 (exceptionsがNoneのときにAttributeErrorで起動即死するのを完全防止) ---
-if exceptions is not None and hasattr(exceptions, "ResourceExhausted"):
-    ResourceExhaustedException = exceptions.ResourceExhausted
-else:
-    # ライブラリがない、または古い場合に備えて、文法エラーにならない安全な代替例外クラスを動的に定義
-    class ResourceExhaustedException(Exception):
-        pass
-
-
-# --- 必須コアパッケージがサーバーに無い場合、クラッシュを防止し、解決手順のガイド画面を親切に表示します ---
-if "google-generativeai" in import_errors or "pandas" in import_errors:
-    st.error("⚙️ アプリの起動に必要なシステムパッケージ（ライブラリ）がデプロイ環境に不足しています。")
-    st.markdown("""
-    ### 🛠️ 解決方法 (Streamlit Cloudでの手順)
-    
-    Streamlit Cloudなどのサーバー環境で外部ライブラリを有効化するには、プロジェクトのルートフォルダに **`requirements.txt`** ファイルを配置する必要があります。
-    
-    GitHubリポジトリ内に **`requirements.txt`** という名前のファイルを新規作成し、以下のテキストをそのままコピーして保存（コミット）してください。
-    """)
-    
-    st.code("""
-google-generativeai
-pandas
-python-docx
-PyPDF2
-python-pptx
-openpyxl
-    """, language="text")
-    
-    st.markdown("""
-    コミットが完了すると、Streamlit Cloudが自動的に変更を検知してパッケージをインストールし、本アプリが100%正常に起動するようになります。
-    """)
-    st.stop()  # ここで実行を安全に中断します
-
 
 # --- 1. APIキーの設定 (APIKEY.ini または クラウドのSecretsからハイブリッド取得) ---
 # ※既存のAPI取得ロジックの構造・変数名を1行も崩さずに、クラウド安全対策を内包させています
@@ -122,10 +44,13 @@ def load_api_key():
 INI_KEY = load_api_key()
 EMBEDDED_API_KEY = INI_KEY
 
-# --- 2. 各ファイル抽出関数 (ポインタを先頭に戻す seek(0) を追加してEOFクラッシュを防止) ---
+
+# --- 2. 各ファイル抽出関数 (ポインタを先頭に戻す seek(0) を追加し、かつ必要なときだけインポートする動的ロード設計) ---
 def extract_from_docx(file):
-    if Document is None:
-        return "[システム警告] python-docx パッケージがインストールされていないため、Wordファイルを解析できません。 requirements.txt に追加してください。"
+    try:
+        from docx import Document
+    except ImportError:
+        return "[警告] python-docx がインストールされていません。Wordファイルの読み込みには requirements.txt に python-docx を追記してください。"
     try:
         file.seek(0)
         doc = Document(file)
@@ -134,8 +59,10 @@ def extract_from_docx(file):
         return f"[Word読込エラー] {str(e)}"
 
 def extract_from_pdf(file):
-    if PdfReader is None:
-        return "[システム警告] PyPDF2 パッケージがインストールされていないため、PDFファイルを解析できません。 requirements.txt に追加してください。"
+    try:
+        from PyPDF2 import PdfReader
+    except ImportError:
+        return "[警告] PyPDF2 がインストールされていません。PDFファイルの読み込みには requirements.txt に PyPDF2 を追記してください。"
     try:
         file.seek(0)
         reader = PdfReader(file)
@@ -144,8 +71,10 @@ def extract_from_pdf(file):
         return f"[PDF読込エラー] {str(e)}"
 
 def extract_from_pptx(file):
-    if Presentation is None:
-        return "[システム警告] python-pptx パッケージがインストールされていないため、PowerPointファイルを解析できません。 requirements.txt に追加してください。"
+    try:
+        from pptx import Presentation
+    except ImportError:
+        return "[警告] python-pptx がインストールされていません。パワーポイントの読み込みには requirements.txt に python-pptx を追記してください。"
     try:
         file.seek(0)
         prs = Presentation(file)
@@ -159,8 +88,10 @@ def extract_from_pptx(file):
         return f"[PowerPoint読込エラー] {str(e)}"
 
 def extract_from_excel(file):
-    if pd is None:
-        return "[システム警告] pandas がロードされていません。"
+    try:
+        import pandas as pd
+    except ImportError:
+        return "[警告] pandas がインストールされていません。Excelファイルの読み込みには requirements.txt に pandas と openpyxl を追記してください。"
     try:
         file.seek(0)
         all_sheets = pd.read_excel(file, sheet_name=None)
@@ -172,8 +103,10 @@ def extract_from_excel(file):
         return f"[Excel読込エラー] {str(e)}\n※xlsxファイル読込には openpyxl パッケージが必要です。"
 
 def extract_from_csv(file):
-    if pd is None:
-        return "[システム警告] pandas がロードされていません。"
+    try:
+        import pandas as pd
+    except ImportError:
+        return "[警告] pandas がインストールされていません。"
     try:
         file.seek(0)
         df = pd.read_csv(file)
@@ -197,9 +130,12 @@ def extract_from_text(file):
         except Exception as e:
             return f"[テキスト読込エラー] {str(e)}"
 
+
 # --- 404エラーを回避しつつ、利用可能なモデル名を安全に取得する関数 ---
 def get_safe_model_name(api_key):
-    if genai is None:
+    try:
+        import google.generativeai as genai
+    except ImportError:
         return 'gemini-1.5-flash'
     try:
         genai.configure(api_key=api_key)
@@ -213,14 +149,19 @@ def get_safe_model_name(api_key):
     except:
         return 'gemini-1.5-flash'
 
+
 # --- 3. AI回答生成ロジック (自動リトライ・履歴ウィンドウ削減版) ---
 def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_key):
-    if genai is None:
-        return "【システムエラー】Google Gemini APIライブラリがロードされていません。"
+    try:
+        import google.generativeai as genai
+        from google.api_core import exceptions
+        ResourceExhaustedException = exceptions.ResourceExhausted
+    except ImportError:
+        return "【システムエラー】Google Gemini APIライブラリ(google-generativeai)が正常にロードされていません。requirements.txtに追記してください。"
 
     target_model = get_safe_model_name(api_key)
     
-    # トークン爆発を防ぐため、AIに送る「過去の履歴」を最新の6発言（3往復）に限定
+    # トークン爆発を防群ため、AIに送る「過去の履歴」を最新の6発言（3往復）に限定
     recent_messages = [messages[0]] + messages[-5:] if len(messages) > 6 else messages
 
     for attempt in range(5):
@@ -273,7 +214,6 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
 
         except (ResourceExhaustedException, Exception) as e:
             error_msg = str(e)
-            # ResourceExhaustedExceptionまたは429文字列検知でリトライを実行
             if "429" in error_msg or isinstance(e, ResourceExhaustedException):
                 wait_time = (attempt + 1) * 10
                 time.sleep(wait_time)
@@ -281,6 +221,7 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
             return f"【システムエラー】詳細: {error_msg}"
             
     return "【混雑エラー】現在AIへのリクエストが連続しています。無料枠の制限を超過したため、1分ほど待ってから再度送信してください。"
+
 
 # --- Rerun処理の安全な抽象化 (古いStreamlit環境でも絶対にクラッシュさせないフォールバック) ---
 def safe_rerun():
@@ -290,33 +231,27 @@ def safe_rerun():
         try:
             st.experimental_rerun()
         except AttributeError:
-            pass  # rerunがどちらも提供されていない超旧バージョンでは自然な状態遷移に委ねます
+            pass
 
-# --- 4. アプリケーションのメインロジック (エラー境界による全画面保護) ---
+
+# --- 4. アプリケーションのメインロジック ---
 def main_app():
-    # 仮想シャットダウン状態の検知
     if st.session_state.get("app_terminated", False):
         st.warning("🛑 システムは終了しました。再度ご利用になる場合は、ブラウザをリロード（再読み込み）してください。")
         st.stop()
 
-    # チャットUIがStreamlit環境でサポートされているかを動的に検証
     has_chat_ui = hasattr(st, "chat_input") and hasattr(st, "chat_message")
 
     # あたたかみのある緑ベースのカラーテーマ & LINE風チャットスタイリング (3色をベースに構成)
     st.markdown("""
     <style>
-        /* 全体デザイン調整 */
         .stApp {
             background-color: #F9FBE7;
         }
-        
-        /* サイドバーの背景 */
         section[data-testid="stSidebar"] {
             background-color: #E8F5E9 !important;
             border-right: 2px solid #C8E6C9;
         }
-        
-        /* ボタンの緑色カスタマイズ */
         div.stButton > button {
             background-color: #4CAF50 !important;
             color: white !important;
@@ -330,16 +265,12 @@ def main_app():
             background-color: #2E7D32 !important;
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
-        
-        /* LINE風チャット吹き出しカスタマイズ */
         .chat-container {
             display: flex;
             flex-direction: column;
             gap: 15px;
             margin-bottom: 20px;
         }
-        
-        /* ユーザー（右側・緑色系） */
         .chat-bubble-user {
             background-color: #81C784;
             color: #1B5E20;
@@ -351,8 +282,6 @@ def main_app():
             font-size: 15px;
             line-height: 1.5;
         }
-        
-        /* AIアシスタント（左側・白系） */
         .chat-bubble-assistant {
             background-color: #FFFFFF;
             color: #2E7D32;
@@ -368,7 +297,6 @@ def main_app():
     </style>
     """, unsafe_allow_html=True)
 
-    # ヘッダーデザイン
     st.markdown("""
     <div style="background-color: #2E7D32; padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 25px; box-shadow: 0px 4px 10px rgba(0,0,0,0.08);">
         <h1 style="color: white; margin: 0; font-size: 28px;">📊 預かり資産トータルクエリーサービス AIFAQ</h1>
@@ -378,7 +306,6 @@ def main_app():
     </div>
     """, unsafe_allow_html=True)
 
-    # 固定ペルソナ情報設定
     current_persona = {
         "service_name": "預かり資産トータルクエリーサービス",
         "overview": "軽技WEBというBIツールを利用した、投資信託の実績集計などが行える金融機関の本部担当者向けサービス。",
@@ -386,21 +313,12 @@ def main_app():
         "features": "①約200の標準クエリから業務要件に合わせたクエリを選択して実行\n②標準クエリを編集しフレキシブルに加工・保存が可能\n③データ取得結果をCSV/Excel形式で保存が可能\n④スケジュール実行で業務の効率化を実現\n⑤専門の担当者による手厚いサポート"
     }
 
-    # --- サイドバー機能 (APIキー設定 & 資料・サンプルのロード) ---
     st.sidebar.markdown("""
     <div style="background-color: #2E7D32; padding: 12px; border-radius: 10px; margin-bottom: 15px; text-align: center;">
         <h3 style="color: white; margin: 0; font-size: 16px;">📁 コントロールパネル</h3>
     </div>
     """, unsafe_allow_html=True)
 
-    # インポートエラー検知時の自己申告メッセージ (必須以外のオプショナルライブラリ)
-    if import_errors:
-        st.sidebar.warning(
-            f"⚠️ 以下の補助パッケージがデプロイ環境にインストールされていません。マニュアル読み込み時の一部形式が制限されます。解決するには `requirements.txt` へ追記してください。\n"
-            f"不足パッケージ: {', '.join(import_errors)}"
-        )
-
-    # APIキー設定（最優先されるカスタムキー入力欄）
     st.sidebar.subheader("🔑 APIキーの設定")
     custom_api_key = st.sidebar.text_input(
         "Gemini APIキーを入力 (任意)",
@@ -408,7 +326,6 @@ def main_app():
         help="入力した場合、このAPIキーを優先して使用します。未入力時はシステムのデフォルトAPIキーを利用します。"
     )
 
-    # APIキー決定のロジック
     ACTIVE_API_KEY = custom_api_key if custom_api_key else EMBEDDED_API_KEY
 
     if not ACTIVE_API_KEY:
@@ -421,7 +338,6 @@ def main_app():
 
     st.sidebar.markdown("---")
 
-    # 6-1. マニュアルファイル読込
     st.sidebar.subheader("📄 マニュアル資料の読込")
     uploaded_files = st.sidebar.file_uploader(
         "マニュアル資料 (Word, PDF, PPT, Excel, CSV)", 
@@ -449,11 +365,9 @@ def main_app():
 
     st.sidebar.markdown("---")
 
-    # 6-2. 出力フォーマットサンプルの読込とクリア
     st.sidebar.subheader("📋 出力フォーマットサンプルの読込")
     st.sidebar.markdown("<small>出力したいサンプルの形式を取り込み、その出力方法を確認できます</small>", unsafe_allow_html=True)
 
-    # セッション状態でのサンプルデータ保持
     if "format_samples" not in st.session_state:
         st.session_state.format_samples = []
     if "format_file_names" not in st.session_state:
@@ -483,13 +397,11 @@ def main_app():
             except Exception as e:
                 st.sidebar.error(f"❌ {f_name} の読込失敗: {str(e)}")
 
-    # 読み込まれている出力フォーマットサンプルの表示
     if st.session_state.format_file_names:
         st.sidebar.write("📌 現在取り込まれているサンプル:")
         for name in st.session_state.format_file_names:
             st.sidebar.write(f"・ {name}")
         
-        # サンプルのクリアボタン
         if st.sidebar.button("🗑️ 出力フォーマットサンプルをクリア"):
             st.session_state.format_samples = []
             st.session_state.format_file_names = []
@@ -498,26 +410,22 @@ def main_app():
 
     st.sidebar.markdown("---")
     
-    # セキュリティ警告（コンテナキルによるOh no.化）を完全に回避する仮想停止
     if st.sidebar.button("🛑 アプリを終了する"):
         st.session_state.app_terminated = True
-        st.sidebar.warning("システムを仮想停止しました。再起動するにはリロードしてください。")
+        st.sidebar.warning("システムを終了しました。")
         safe_rerun()
 
-    # --- 7. セッション状態の初期化 ---
     if "messages" not in st.session_state:
         st.session_state.messages = [{
             "role": "assistant", 
             "content": "「預かり資産トータルクエリーサービス」AIFAQアプリへようこそ。投資信託の実績集計や軽技WEBの操作、標準クエリの活用方法について何でもご質問ください。マニュアル資料や、再現したい出力サンプルのフォーマットを左側のメニューからアップロードしていただければ、具体的な操作方法やデータ抽出の手順をご案内いたします。"
         }]
 
-    # --- 8. メインエリアのチャットレイアウト ---
     if st.session_state.format_file_names:
         st.info(f"💡 出力フォーマットサンプル（{', '.join(st.session_state.format_file_names)}）が読み込まれています。チャットで「このサンプルを出力するには？」等と質問してみてください。")
     else:
         st.info(f"💡 マニュアルを読み込ませる場合や、特定の出力サンプルに基づいて抽出手順を知りたい場合は、左側のサイドバーからファイルをアップロードしてください。")
 
-    # チャット履歴をLINE風に描画
     chat_placeholder = st.container()
 
     with chat_placeholder:
@@ -536,7 +444,6 @@ def main_app():
 
     prompt = None
 
-    # Streamlitのバージョンに応じてチャット入力方法を自動分岐
     if has_chat_ui:
         user_input = st.chat_input("クエリーサービスの質問内容を入力してください（例：スケジュール実行の方法は？等）")
         if user_input:
@@ -553,7 +460,6 @@ def main_app():
             if submitted and user_input:
                 prompt = user_input
 
-    # チャット入力が検知された場合の処理
     if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
         
@@ -595,6 +501,6 @@ def main_app():
 try:
     main_app()
 except Exception as main_error:
-    st.error("🚨 アプリケーションの実行中に予期せぬエラーが一時的に検知されました。")
-    st.warning("このエラーは、外部接続環境またはライブラリのパース競合に起因する可能性があります。以下に詳細を表示します。")
+    st.error("🚨 アプリケーションの実行中にエラーが発生しました。")
+    st.warning("お手数ですが、GitHubリポジトリに requirements.txt が存在することを確認し、内容が正しくデプロイされているか検証してください。")
     st.exception(main_error)
