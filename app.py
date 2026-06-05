@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 
+# --- 1. ページタイトルを動的に変更するためのセッション状態の初期化 ---
+if "app_title" not in st.session_state:
+    st.session_state.app_title = "🤖 汎用 AIFAQチャットシステム"
+
 # --- 【最優先ルール】Streamlitのページ構成設定は、他のあらゆるコマンドより先に最上部で実行します ---
-st.set_page_config(page_title="預かり資産トータルクエリーサービス AIFAQ", layout="wide")
+st.set_page_config(page_title=st.session_state.app_title, layout="wide")
 
 import pandas as pd
 import google.generativeai as genai
@@ -17,8 +21,8 @@ import signal
 import re
 import time  # リトライ待機（スリープ）処理のため
 
-# --- 1. APIキーの設定 (APIKEY.ini または クラウドのSecretsからハイブリッド取得) ---
-# ※既存 of API取得ロジックの構造・変数名を1行も崩さずに、クラウド安全対策を内包させています
+# --- 2. APIキーの設定 (APIKEY.ini または クラウドのSecretsからハイブリッド取得) ---
+# ※既存のAPI取得ロジックの構造・変数名を1行も崩さずに、クラウド安全対策を内包させています
 def load_api_key():
     # 1. まずローカルの APIKEY.ini を探す
     config = configparser.ConfigParser()
@@ -45,7 +49,7 @@ INI_KEY = load_api_key()
 EMBEDDED_API_KEY = INI_KEY
 
 
-# --- 2. 各ファイル抽出関数 (ポインタを先頭に戻す seek(0) を追加して読み込みエラーを完全に防止) ---
+# --- 3. 各ファイル抽出関数 (ポインタを先頭に戻す seek(0) を追加して読み込みエラーを完全に防止) ---
 def extract_from_docx(file):
     file.seek(0)
     doc = Document(file)
@@ -114,7 +118,7 @@ def get_safe_model_name(api_key):
         return 'gemini-1.5-flash'
 
 
-# --- 3. AI回答生成ロジック (自動リトライ・履歴ウィンドウ削減版) ---
+# --- 4. AI回答生成ロジック (自動リトライ・履歴ウィンドウ削減版 / 汎用化プロンプト) ---
 def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_key):
     target_model = get_safe_model_name(api_key)
     
@@ -126,40 +130,35 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel(target_model)
             
-            combined_docs = "\n\n".join(product_docs) if product_docs else "追加のマニュアル等のアップロードは現在ありません。標準仕様に基づいて回答してください。"
+            combined_docs = "\n\n".join(product_docs) if product_docs else "追加のマニュアル等のアップロードは現在ありません。一般的な知識に基づいてユーザーの課題解決を支援してください。"
             combined_formats = "\n\n".join(format_docs) if format_docs else "出力フォーマットサンプルの指定は現在ありません。"
             
             history_text = ""
             for m in recent_messages:
-                role_label = "AIアシスタント(あなた)" if m["role"] == "assistant" else "本部担当者(ユーザー)"
+                role_label = "AIアシスタント(あなた)" if m["role"] == "assistant" else "ユーザー"
                 history_text += f"{role_label}: {m['content']}\n"
 
+            # 汎用FAQ用のシステムプロンプト構成
             system_prompt = f"""
-あなたは「預かり資産トータルクエリーサービス」およびBIツール「軽技WEB」に精通した熟練のAIFAQアシスタントです。
-金融機関の本部担当者（ユーザー）からのシステム操作、データ抽出、クエリ、エラー等に関する質問に対して、正確かつ分かりやすく回答してください。
+あなたはユーザーから提供されたマニュアルや資料に基づいて、操作手順や記載内容を正確に説明する熟練のAIFAQアシスタントです。
+操作方法、機能説明、データ構造、エラー解決等に関する質問に対して、丁寧かつ極めて分かりやすく回答してください。
 
-【対象サービス・システム構成情報】
-・サービス名: {persona['service_name']}
-・概要: {persona['overview']}
-・接続構成: {persona['architecture']}
-
-【本サービスの特徴】
-{persona['features']}
+【対象マニュアル・参照資料情報】
+{persona['description']}
 
 【アップロードされた各種マニュアル・参考ドキュメント（最優先参照情報）】
 {combined_docs}
 
 【アップロードされた出力フォーマットサンプル】
 {combined_formats}
-※この出力フォーマットサンプルが提示されている場合は、このデータ形式やレイアウトを出力するために、システム上でどのような抽出操作や設定、クエリのカスタマイズを行えばよいのかを、上記の製品仕様・マニュアルと照らし合わせて具体的に提案してください。
+※この出力フォーマットサンプルが提示されている場合は、ユーザーが「これと同じデータ形式やレイアウトを出力したい」と希望しています。
+現在アップロードされている各種マニュアル・参考ドキュメントを参照し、このフォーマットを出力するにはどのような操作、設定、データの選択や加工手順を行えばいいのかを、手順を追って具体的に説明してください。
 
 【回答の絶対ルール】
-1. ユーザー（本部担当者）の質問に対し、アップロードされたマニュアルの情報を最優先に参照して回答を構成してください。
-2. あくまで「預かり資産トータルクエリーサービス」および「軽技WEB」「Fund Organizer」の文脈に沿って回答してください。一般的なIT知識でなく、本サービスの仕様を重視してください。
-3. 専門的な内容であっても、金融機関の業務担当者がスムーズに作業を進められるよう、具体的な手順や選択すべきクエリ（標準クエリ約200種）など、実務に即した丁寧な表現で回答してください。
-4. アップロードされた情報だけで判断がつかない不確実な事項については、知ったかぶりをせず、「専門のサポート窓口」へ案内するなどの対応を含めてください。
-5. AIとしてのメタな発言（例：「以上がマニュアルに基づく回答です」など）は含めず、ユーザーへの親切な回答テキストのみを出力してください。
-6. 出力フォーマットサンプルが提示されている場合、その内容を出力するためのアプローチ（どのテーブルから、どの項目をどのように加工して出力するかなど）を分かりやすく説明してください。
+1. ユーザーの質問に対し、アップロードされたマニュアルの情報を最も信頼できる「絶対の基準（最優先情報）」として参照し、正確に回答を構成してください。
+2. アップロードされた情報だけで判断がつかない不確実な事項やマニュアルに記載がない操作については、知ったかぶりをせず、「マニュアル等に記載がありませんでした」と明示したうえで、一般的な推奨方法を補足するか、専門の窓口や管理者への確認を案内してください。
+3. 専門用語が使われている場合でも、操作担当者がスムーズに迷わず作業を進められるよう、ステップ・バイ・ステップの具体的な手順や丁寧な表現で回答してください。
+4. AIとしてのメタな発言（例：「以上がアップロードされたマニュアルに基づく回答です」など）は含めず、ユーザーへの親切な回答テキストのみを親身なLINE風の対話形式で出力してください。
 
 【これまでの会話履歴（※直近の重要な会話のみ抽出）】
 {history_text}
@@ -180,14 +179,13 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
     return "【混雑エラー】現在AIへのリクエストが連続しています。無料枠の制限を超過したため、1分ほど待ってから再度送信してください。"
 
 
-# --- 4. アプリケーションのメインロジック ---
+# --- 5. アプリケーションのメインロジック ---
 def main_app():
     if st.session_state.get("app_terminated", False):
         st.warning("🛑 システムは終了しました。再度ご利用になる場合は、ブラウザをリロード（再読み込み）してください。")
         st.stop()
 
     # あたたかみのある緑ベースのカラーテーマ & LINE風チャットデザイン
-    # メインカラー3色: 深緑（#2E7D32）、薄緑（#F1F8E9）、チャット背景白（#FFFFFF）
     st.markdown("""
     <style>
         .stApp {
@@ -244,22 +242,6 @@ def main_app():
     </style>
     """, unsafe_allow_html=True)
 
-    st.markdown("""
-    <div style="background-color: #2E7D32; padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 25px; box-shadow: 0px 4px 10px rgba(0,0,0,0.08);">
-        <h1 style="color: white; margin: 0; font-size: 28px;">📊 預かり資産トータルクエリーサービス AIFAQ</h1>
-        <p style="color: #E8F5E9; margin: 8px 0 0 0; font-size: 15px;">
-            投資信託の実績集計や、BIツール「軽技WEB」、データベース「Fund Organizer」に関する疑問を解消するFAQアプリです。
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    current_persona = {
-        "service_name": "預かり資産トータルクエリーサービス",
-        "overview": "軽技WEBというBIツールを利用した、投資信託の実績集計などが行える金融機関の本部担当者向け service。",
-        "architecture": "顧客（投資家）の契約情報、取引履歴、残高、損益情報を保管しているデータベース「Fund Organizer」を参照元として、本部担当者のブラウザから「軽技WEB」を利用して接続し、データを取得する。",
-        "features": "①約200の標準クエリから業務要件に合わせたクエリを選択して実行\n②標準クエリを編集しフレキシブルに加工・保存が可能\n③データ取得結果をCSV/Excel形式で保存が可能\n④スケジュール実行で業務の効率化を実現\n⑤専門の担当者による手厚いサポート"
-    }
-
     # --- 左側サイドバー情報入力メニュー ---
     st.sidebar.markdown("""
     <div style="background-color: #2E7D32; padding: 12px; border-radius: 10px; margin-bottom: 15px; text-align: center;">
@@ -296,7 +278,10 @@ def main_app():
         key="file_uploader"
     )
 
+    # --- タイトルとキャラクター情報の動的書き換えロジック ---
     all_extra_text = []
+    file_names = []
+    
     if uploaded_files:
         for f in uploaded_files:
             try:
@@ -309,9 +294,34 @@ def main_app():
                 
                 if content:
                     all_extra_text.append(f"--- ファイル名: {f.name} ---\n{content}")
+                    file_names.append(f.name)
                     st.sidebar.write(f"✔️ 資料読込済: {f.name}")
             except Exception as e:
                 st.sidebar.error(f"❌ {f.name} の読込失敗: {str(e)}")
+
+    # 読み込まれたマニュアルに基づいてタイトルを動的に変更
+    if file_names:
+        # 代表して最初のファイル名（拡張子なし）を取り出して、タイトルに設定
+        main_file_base = os.path.splitext(file_names[0])[0]
+        st.session_state.app_title = f"📖 {main_file_base} 操作説明 AIFAQ"
+        current_persona = {
+            "description": f"アップロードされたマニュアル「{', '.join(file_names)}」に完全に精通した専門の操作説明AIFAQです。"
+        }
+    else:
+        st.session_state.app_title = "🤖 汎用 AIFAQチャットシステム"
+        current_persona = {
+            "description": "現在は特定のマニュアルはロードされていません。ユーザーからロードされる操作手順書や、一般的な操作に関する問い合わせに柔軟に対応する汎用FAQアシスタントです。"
+        }
+
+    # アプリヘッダー表示
+    st.markdown(f"""
+    <div style="background-color: #2E7D32; padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 25px; box-shadow: 0px 4px 10px rgba(0,0,0,0.08);">
+        <h1 style="color: white; margin: 0; font-size: 28px;">{st.session_state.app_title}</h1>
+        <p style="color: #E8F5E9; margin: 8px 0 0 0; font-size: 15px;">
+            マニュアル資料や操作手順書を読み込み、質問に対してスムーズに回答するAIFAQシステムです。
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.sidebar.markdown("---")
 
@@ -367,17 +377,19 @@ def main_app():
         st.sidebar.warning("システムを終了しました。")
         st.rerun()
 
-    # --- 5. セッション状態の初期化 ---
+    # --- 6. セッション状態の初期化 ---
     if "messages" not in st.session_state:
         st.session_state.messages = [{
             "role": "assistant", 
-            "content": "「預かり資産トータルクエリーサービス」AIFAQアプリへようこそ。投資信託の実績集計や軽技WEBの操作、標準クエリの活用方法について何でもご質問ください。マニュアル資料や再現したい出力サンプルのフォーマットを左側のメニューからアップロードしていただければ、具体的な操作方法やデータ抽出の手順をご案内いたします。"
+            "content": "汎用 AIFAQチャットシステムへようこそ！お手元の操作マニュアルや資料（Word, PDF, Excel, CSV, PPT等）を左側のメニューからアップロードしていただければ、即座にその内容を学習した専用の回答アシスタントとしてお答えいたします。\nまた、「再現したい成果物の出力サンプル」もお持ちの場合は、そちらをアップロードしていただくことで、マニュアルに沿ったデータ作成手順をお調べします。"
         }]
 
     if st.session_state.format_file_names:
         st.info(f"💡 出力フォーマットサンプル（{', '.join(st.session_state.format_file_names)}）が読み込まれています。チャットで「このサンプルを出力するには？」等と質問してみてください。")
+    elif file_names:
+        st.info(f"💡 現在、マニュアル資料（{', '.join(file_names)}）が読み込まれています。学習した情報に基づいて的確に案内いたします！")
     else:
-        st.info(f"💡 マニュアルを読み込ませる場合や、特定の出力サンプルに基づいて抽出手順を知りたい場合は、左側のサイドバーからファイルをアップロードしてください。")
+        st.info(f"💡 マニュアル資料を学習させたい場合は、左側のサイドバーからファイルをアップロードしてください。現在アップロードされたマニュアルはありません。")
 
     # チャット履歴をLINE風に描画
     chat_placeholder = st.container()
@@ -397,7 +409,7 @@ def main_app():
         st.markdown('</div>', unsafe_allow_html=True)
 
     # ユーザー入力を受付
-    if prompt := st.chat_input("クエリーサービスの質問内容を入力してください（例：スケジュール実行の方法は？等）"):
+    if prompt := st.chat_input("マニュアルに関する質問や操作方法の疑問を入力してください..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         
         with chat_placeholder:
