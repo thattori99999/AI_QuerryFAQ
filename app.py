@@ -221,7 +221,7 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
 
 【テーブル（表）の参照と特定に関する絶対ルール】
 1. **「参照テーブルの明記」**: アップロードされた資料には、操作手順や設定値が「表（テーブル形式）」で整理されている箇所が多数あります。ユーザーの質問に答える際、または手順を解説する際には、マニュアル内の **どのテーブル（例：[資料内テーブル #1]、[シート名/テーブル名]、列項目名など）を参照してその判断や数値・手順を導き出したのか** を、回答内で必ず具体的に言及・特定してください。
-2. データ項目やコード値の説明時には、「〇〇マニュアルの、表『××』に記載のある通り…」のように、ユーザーが自身でマニュアルを手繰って検証・確認できるように参照元テーブルを紐づけてください。
+2. データ項目やコード値の説明時には、「〇〇マニュアルの、表『××』に記載のある通り…」のように, ユーザーが自身でマニュアルを手繰って検証・確認できるように参照元テーブルを紐づけてください。
 
 【預かり資産トータルクエリーサービスに関する絶対判定ルール】
 もしアップロードされた資料の内容や質問の文脈が「預かり資産トータルクエリーサービス」に関連する場合、ユーザーのやりたいデータ抽出や操作要望に対して、以下の思考プロセスを厳格に適用して回答を構成してください。
@@ -270,7 +270,7 @@ def main_app():
         st.warning("🛑 システムは終了しました。再度ご利用になる場合は、ブラウザをリロード（再読み込み）してください。")
         st.stop()
 
-    # --- Markdownパースエラーを100%回避するため、CSSのマルチライン行頭のインデント（空白）を完全に除去します ---
+    # --- Streamlitの干渉を避けるため、CSS指定は余白を除去してインポートします ---
     st.markdown("""<style>
 .stApp {
 background-color: #FAFCEE !important;
@@ -448,17 +448,17 @@ line-height: 1.5 !important;
             "description": f"提供されたマニュアル「{', '.join(file_names)}」（対象システム/ツール: {st.session_state.detected_service_name}）に精通した、専属の優秀なAIFAQ操作説明アシスタントです。"
         }
     else:
-        st.session_state.app_title = "🤖 汎用 AIFAQチャットシステム"
+        st.session_state.app_title = "🤖 汎用 AIFAQシステム"
         current_persona = {
             "description": "現在は特定のマニュアルはロードされていません。ロードされる多様なシステム・ツール資料や操作手順、一般的な疑問に対して柔軟に回答する汎用AIFAQアシスタントです。"
         }
 
-    # --- 💡行頭のすべてのインデント（スペース）を完全に削除した超々巨大タイトルブロック ---
-    st.markdown(f"""<div style="background-color: #1B5E20; padding: 45px 30px; border-radius: 18px; text-align: center; margin-bottom: 30px; box-shadow: 0px 6px 16px rgba(0,0,0,0.18); border: 3px solid #81C784;">
-<h1 style="color: white; margin: 0; font-size: 110px; font-weight: 950; line-height: 1.1; letter-spacing: -2px; word-break: break-word;">{st.session_state.app_title}</h1>
-<p style="color: #E8F5E9; margin: 25px 0 0 0; font-size: 22px; font-weight: bold; opacity: 0.95; letter-spacing: 0.5px;">
+    # --- 💡見出しタグ(h1, p)を撤廃し、インライン!important適用した確実な「文字サイズ42px」の超美麗タイトルブロック ---
+    st.markdown(f"""<div style="background-color: #1B5E20 !important; padding: 40px 30px !important; border-radius: 18px !important; text-align: center !important; margin-bottom: 30px !important; box-shadow: 0px 6px 16px rgba(0,0,0,0.18) !important; border: 3px solid #81C784 !important;">
+<div style="color: white !important; margin: 0 !important; font-size: 42px !important; font-weight: bold !important; line-height: 1.3 !important; word-break: break-word !important; font-family: 'BIZ UDゴシック', sans-serif !important;">{st.session_state.app_title}</div>
+<div style="color: #E8F5E9 !important; margin: 15px 0 0 0 !important; font-size: 20px !important; font-weight: bold !important; opacity: 0.95 !important; letter-spacing: 0.5px !important; font-family: 'BIZ UDゴシック', sans-serif !important;">
 操作マニュアルを賢く学習し、図表や設定テーブルの参照箇所を特定しながら、疑問を分かりやすく解決します。
-</p>
+</div>
 </div>""", unsafe_allow_html=True)
 
     st.sidebar.markdown("---")
