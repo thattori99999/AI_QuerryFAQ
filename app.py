@@ -454,12 +454,8 @@ line-height: 1.5 !important;
         }
 
     # --- 💡見出しタグ(h1, p)を撤廃し、インライン!important適用した確実な「文字サイズ42px」の超美麗タイトルブロック ---
-    st.markdown(f"""<div style="background-color: #1B5E20 !important; padding: 40px 30px !important; border-radius: 18px !important; text-align: center !important; margin-bottom: 30px !important; box-shadow: 0px 6px 16px rgba(0,0,0,0.18) !important; border: 3px solid #81C784 !important;">
-<div style="color: white !important; margin: 0 !important; font-size: 42px !important; font-weight: bold !important; line-height: 1.3 !important; word-break: break-word !important; font-family: 'BIZ UDゴシック', sans-serif !important;">{st.session_state.app_title}</div>
-<div style="color: #E8F5E9 !important; margin: 15px 0 0 0 !important; font-size: 20px !important; font-weight: bold !important; opacity: 0.95 !important; letter-spacing: 0.5px !important; font-family: 'BIZ UDゴシック', sans-serif !important;">
-操作マニュアルを賢く学習し、図表や設定テーブルの参照箇所を特定しながら、疑問を分かりやすく解決します。
-</div>
-</div>""", unsafe_allow_html=True)
+    # Markdownパーサーによるバグを回避するため、改行文字を一切挟まない1行のHTMLコードとして出力します。
+    st.markdown(f"""<div style="background-color: #1B5E20 !important; padding: 40px 30px !important; border-radius: 18px !important; text-align: center !important; margin-bottom: 30px !important; box-shadow: 0px 6px 16px rgba(0,0,0,0.18) !important; border: 3px solid #81C784 !important;"><div style="color: white !important; margin: 0 !important; font-size: 42px !important; font-weight: bold !important; line-height: 1.3 !important; word-break: break-word !important; font-family: 'BIZ UDゴシック', sans-serif !important;">{st.session_state.app_title}</div><div style="color: #E8F5E9 !important; margin: 15px 0 0 0 !important; font-size: 20px !important; font-weight: bold !important; opacity: 0.95 !important; letter-spacing: 0.5px !important; font-family: 'BIZ UDゴシック', sans-serif !important;">操作マニュアルを賢く学習し、図表や設定テーブルの参照箇所を特定しながら、疑問を分かりやすく解決します。</div></div>""", unsafe_allow_html=True)
 
     st.sidebar.markdown("---")
 
