@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 
-# --- 最優先ルール: Streamlitのページ構成設定を、すべてのコマンドに先駆けて先頭で実行します ---
+# --- 【最優先ルール】Streamlitのページ構成設定は、他のあらゆるコマンドより先に最上部で実行します ---
 st.set_page_config(page_title="預かり資産トータルクエリーサービス AIFAQ", layout="wide")
 
-# --- 外部ライブラリの安全なインポート (インポートエラーによるアプリ起動即死を完全に回避する超堅牢設計) ---
+# --- 外部ライブラリの安全なインポート (インポートエラーによるアプリ起動即死を完全に回避するセーフガード) ---
 import_errors = []
 
 try:
@@ -16,7 +16,7 @@ except ImportError:
 try:
     import google.generativeai as genai
     from google.api_core import exceptions  # Rate Limit(429) エラーを確実に捕捉するため
-except Exception as e:
+except Exception:
     import_errors.append("google-generativeai")
     genai = None
     exceptions = None
@@ -52,6 +52,16 @@ import os
 import signal
 import re
 import time  # リトライ待機（スリープ）処理のため
+
+
+# --- 例外処理の安全なフォールバック設計 (exceptionsがNoneのときにAttributeErrorで起動即死するのを完全防止) ---
+if exceptions is not None and hasattr(exceptions, "ResourceExhausted"):
+    ResourceExhaustedException = exceptions.ResourceExhausted
+else:
+    # ライブラリがない、または古い場合に備えて、文法エラーにならない安全な代替例外クラスを動的に定義
+    class ResourceExhaustedException(Exception):
+        pass
+
 
 # --- 必須コアパッケージがサーバーに無い場合、クラッシュを防止し、解決手順のガイド画面を親切に表示します ---
 if "google-generativeai" in import_errors or "pandas" in import_errors:
@@ -205,8 +215,8 @@ def get_safe_model_name(api_key):
 
 # --- 3. AI回答生成ロジック (自動リトライ・履歴ウィンドウ削減版) ---
 def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_key):
-    if genai is None or exceptions is None:
-        return "【システムエラー】Google Gemini APIライブラリ(google-generativeai)が正常にロードされていません。requirements.txtに追加されているか確認してください。"
+    if genai is None:
+        return "【システムエラー】Google Gemini APIライブラリがロードされていません。"
 
     target_model = get_safe_model_name(api_key)
     
@@ -261,9 +271,10 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
             response = model.generate_content(system_prompt)
             return response.text
 
-        except (exceptions.ResourceExhausted, Exception) as e:
+        except (ResourceExhaustedException, Exception) as e:
             error_msg = str(e)
-            if "429" in error_msg or isinstance(e, exceptions.ResourceExhausted):
+            # ResourceExhaustedExceptionまたは429文字列検知でリトライを実行
+            if "429" in error_msg or isinstance(e, ResourceExhaustedException):
                 wait_time = (attempt + 1) * 10
                 time.sleep(wait_time)
                 continue
@@ -281,290 +292,291 @@ def safe_rerun():
         except AttributeError:
             pass  # rerunがどちらも提供されていない超旧バージョンでは自然な状態遷移に委ねます
 
-# --- 4. 画面構築 (Streamlit UI) ---
-# チャットUI(st.chat_input, st.chat_message)がインストールされたStreamlit環境でサポートされているかを検証
-has_chat_ui = hasattr(st, "chat_input") and hasattr(st, "chat_message")
+# --- 4. アプリケーションのメインロジック (エラー境界による全画面保護) ---
+def main_app():
+    # 仮想シャットダウン状態の検知
+    if st.session_state.get("app_terminated", False):
+        st.warning("🛑 システムは終了しました。再度ご利用になる場合は、ブラウザをリロード（再読み込み）してください。")
+        st.stop()
 
-# あたたかみのある緑ベースのカラーテーマ & LINE風チャットスタイリング (3色をベースに構成)
-# メインの緑: #2E7D32、背景の薄緑: #F1F8E9、チャット背景: #E8F5E9 / #FFFFFF
-st.markdown("""
-<style>
-    /* 全体デザイン調整 */
-    .stApp {
-        background-color: #F9FBE7;
-    }
-    
-    /* サイドバーの背景 */
-    section[data-testid="stSidebar"] {
-        background-color: #E8F5E9 !important;
-        border-right: 2px solid #C8E6C9;
-    }
-    
-    /* ボタンの緑色カスタマイズ */
-    div.stButton > button {
-        background-color: #4CAF50 !important;
-        color: white !important;
-        border-radius: 20px !important;
-        border: none !important;
-        padding: 0.5rem 1.5rem !important;
-        font-weight: bold !important;
-        transition: all 0.3s;
-    }
-    div.stButton > button:hover {
-        background-color: #2E7D32 !important;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }
-    
-    /* LINE風チャット吹き出しカスタマイズ */
-    .chat-container {
-        display: flex;
-        flex-direction: column;
-        gap: 15px;
-        margin-bottom: 20px;
-    }
-    
-    /* ユーザー（右側・緑色系） */
-    .chat-bubble-user {
-        background-color: #81C784;
-        color: #1B5E20;
-        padding: 12px 18px;
-        border-radius: 18px 18px 0px 18px;
-        align-self: flex-end;
-        max-width: 75%;
-        box-shadow: 0px 2px 5px rgba(0,0,0,0.05);
-        font-size: 15px;
-        line-height: 1.5;
-    }
-    
-    /* AIアシスタント（左側・白系） */
-    .chat-bubble-assistant {
-        background-color: #FFFFFF;
-        color: #2E7D32;
-        padding: 12px 18px;
-        border-radius: 18px 18px 18px 0px;
-        align-self: flex-start;
-        max-width: 75%;
-        box-shadow: 0px 2px 5px rgba(0,0,0,0.05);
-        border: 1px solid #C8E6C9;
-        font-size: 15px;
-        line-height: 1.5;
+    # チャットUIがStreamlit環境でサポートされているかを動的に検証
+    has_chat_ui = hasattr(st, "chat_input") and hasattr(st, "chat_message")
+
+    # あたたかみのある緑ベースのカラーテーマ & LINE風チャットスタイリング (3色をベースに構成)
+    st.markdown("""
+    <style>
+        /* 全体デザイン調整 */
+        .stApp {
+            background-color: #F9FBE7;
+        }
+        
+        /* サイドバーの背景 */
+        section[data-testid="stSidebar"] {
+            background-color: #E8F5E9 !important;
+            border-right: 2px solid #C8E6C9;
+        }
+        
+        /* ボタンの緑色カスタマイズ */
+        div.stButton > button {
+            background-color: #4CAF50 !important;
+            color: white !important;
+            border-radius: 20px !important;
+            border: none !important;
+            padding: 0.5rem 1.5rem !important;
+            font-weight: bold !important;
+            transition: all 0.3s;
+        }
+        div.stButton > button:hover {
+            background-color: #2E7D32 !important;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        
+        /* LINE風チャット吹き出しカスタマイズ */
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        /* ユーザー（右側・緑色系） */
+        .chat-bubble-user {
+            background-color: #81C784;
+            color: #1B5E20;
+            padding: 12px 18px;
+            border-radius: 18px 18px 0px 18px;
+            align-self: flex-end;
+            max-width: 75%;
+            box-shadow: 0px 2px 5px rgba(0,0,0,0.05);
+            font-size: 15px;
+            line-height: 1.5;
+        }
+        
+        /* AIアシスタント（左側・白系） */
+        .chat-bubble-assistant {
+            background-color: #FFFFFF;
+            color: #2E7D32;
+            padding: 12px 18px;
+            border-radius: 18px 18px 18px 0px;
+            align-self: flex-start;
+            max-width: 75%;
+            box-shadow: 0px 2px 5px rgba(0,0,0,0.05);
+            border: 1px solid #C8E6C9;
+            font-size: 15px;
+            line-height: 1.5;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ヘッダーデザイン
+    st.markdown("""
+    <div style="background-color: #2E7D32; padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 25px; box-shadow: 0px 4px 10px rgba(0,0,0,0.08);">
+        <h1 style="color: white; margin: 0; font-size: 28px;">📊 預かり資産トータルクエリーサービス AIFAQ</h1>
+        <p style="color: #E8F5E9; margin: 8px 0 0 0; font-size: 15px;">
+            投資信託の実績集計や、BIツール「軽技WEB」、データベース「Fund Organizer」に関する疑問を解消するFAQアプリです。
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 固定ペルソナ情報設定
+    current_persona = {
+        "service_name": "預かり資産トータルクエリーサービス",
+        "overview": "軽技WEBというBIツールを利用した、投資信託の実績集計などが行える金融機関の本部担当者向けサービス。",
+        "architecture": "顧客（投資家）の契約情報、取引履歴、残高、損益情報を保管しているデータベース「Fund Organizer」を参照元として、本部担当者のブラウザから「軽技WEB」を利用して接続し、データを取得する。",
+        "features": "①約200の標準クエリから業務要件に合わせたクエリを選択して実行\n②標準クエリを編集しフレキシブルに加工・保存が可能\n③データ取得結果をCSV/Excel形式で保存が可能\n④スケジュール実行で業務の効率化を実現\n⑤専門の担当者による手厚いサポート"
     }
 
-    .chat-meta {
-        font-size: 11px;
-        color: #757575;
-        margin-top: 4px;
-    }
-</style>
-""", unsafe_allow_html=True)
+    # --- サイドバー機能 (APIキー設定 & 資料・サンプルのロード) ---
+    st.sidebar.markdown("""
+    <div style="background-color: #2E7D32; padding: 12px; border-radius: 10px; margin-bottom: 15px; text-align: center;">
+        <h3 style="color: white; margin: 0; font-size: 16px;">📁 コントロールパネル</h3>
+    </div>
+    """, unsafe_allow_html=True)
 
-# ヘッダーデザイン
-st.markdown("""
-<div style="background-color: #2E7D32; padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 25px; box-shadow: 0px 4px 10px rgba(0,0,0,0.08);">
-    <h1 style="color: white; margin: 0; font-size: 28px;">📊 預かり資産トータルクエリーサービス AIFAQ</h1>
-    <p style="color: #E8F5E9; margin: 8px 0 0 0; font-size: 15px;">
-        投資信託の実績集計や、BIツール「軽技WEB」、データベース「Fund Organizer」に関する疑問を解消するFAQアプリです。
-    </p>
-</div>
-""", unsafe_allow_html=True)
+    # インポートエラー検知時の自己申告メッセージ (必須以外のオプショナルライブラリ)
+    if import_errors:
+        st.sidebar.warning(
+            f"⚠️ 以下の補助パッケージがデプロイ環境にインストールされていません。マニュアル読み込み時の一部形式が制限されます。解決するには `requirements.txt` へ追記してください。\n"
+            f"不足パッケージ: {', '.join(import_errors)}"
+        )
 
-# --- 5. 固定ペルソナ情報設定 ---
-current_persona = {
-    "service_name": "預かり資産トータルクエリーサービス",
-    "overview": "軽技WEBというBIツールを利用した、投資信託の実績集計などが行える金融機関の本部担当者向けサービス。",
-    "architecture": "顧客（投資家）の契約情報、取引履歴、残高、損益情報を保管しているデータベース「Fund Organizer」を参照元として、本部担当者のブラウザから「軽技WEB」を利用して接続し、データを取得する。",
-    "features": "①約200の標準クエリから業務要件に合わせたクエリを選択して実行\n②標準クエリを編集しフレキシブルに加工・保存が可能\n③データ取得結果をCSV/Excel形式で保存が可能\n④スケジュール実行で業務の効率化を実現\n⑤専門の担当者による手厚いサポート"
-}
-
-# --- 6. サイドバー機能 (APIキー設定 & 資料・サンプルのロード) ---
-st.sidebar.markdown("""
-<div style="background-color: #2E7D32; padding: 12px; border-radius: 10px; margin-bottom: 15px; text-align: center;">
-    <h3 style="color: white; margin: 0; font-size: 16px;">📁 コントロールパネル</h3>
-</div>
-""", unsafe_allow_html=True)
-
-# インポートエラー検知時の自己申告メッセージ (必須以外のオプショナルライブラリ)
-if import_errors:
-    st.sidebar.warning(
-        f"⚠️ 以下の補助パッケージがデプロイ環境にインストールされていません。マニュアル読み込み時の一部形式が制限されます。解決するには `requirements.txt` へ追記してください。\n"
-        f"不足パッケージ: {', '.join(import_errors)}"
+    # APIキー設定（最優先されるカスタムキー入力欄）
+    st.sidebar.subheader("🔑 APIキーの設定")
+    custom_api_key = st.sidebar.text_input(
+        "Gemini APIキーを入力 (任意)",
+        type="password",
+        help="入力した場合、このAPIキーを優先して使用します。未入力時はシステムのデフォルトAPIキーを利用します。"
     )
 
-# APIキー設定（最優先されるカスタムキー入力欄）
-st.sidebar.subheader("🔑 APIキーの設定")
-custom_api_key = st.sidebar.text_input(
-    "Gemini APIキーを入力 (任意)",
-    type="password",
-    help="入力した場合、このAPIキーを優先して使用します。未入力時はシステムのデフォルトAPIキーを利用します。"
-)
+    # APIキー決定のロジック
+    ACTIVE_API_KEY = custom_api_key if custom_api_key else EMBEDDED_API_KEY
 
-# APIキー決定のロジック
-ACTIVE_API_KEY = custom_api_key if custom_api_key else EMBEDDED_API_KEY
-
-if not ACTIVE_API_KEY:
-    st.sidebar.error("⚠️ APIキーが設定されていません。サイドバーから入力するか、設定ファイルを確認してください。")
-else:
-    if custom_api_key:
-        st.sidebar.success("✔️ カスタムAPIキーを適用中")
+    if not ACTIVE_API_KEY:
+        st.sidebar.error("⚠️ APIキーが設定されていません。サイドバーから入力するか、設定ファイルを確認してください。")
     else:
-        st.sidebar.info("✔️ デフォルトAPIキーを使用中")
+        if custom_api_key:
+            st.sidebar.success("✔️ カスタムAPIキーを適用中")
+        else:
+            st.sidebar.info("✔️ デフォルトAPIキーを使用中")
 
-st.sidebar.markdown("---")
+    st.sidebar.markdown("---")
 
-# 6-1. マニュアルファイル読込
-st.sidebar.subheader("📄 マニュアル資料の読込")
-uploaded_files = st.sidebar.file_uploader(
-    "マニュアル資料 (Word, PDF, PPT, Excel, CSV)", 
-    type=["docx", "pdf", "pptx", "xlsx", "xls", "csv"], 
-    accept_multiple_files=True,
-    key="file_uploader"
-)
+    # 6-1. マニュアルファイル読込
+    st.sidebar.subheader("📄 マニュアル資料の読込")
+    uploaded_files = st.sidebar.file_uploader(
+        "マニュアル資料 (Word, PDF, PPT, Excel, CSV)", 
+        type=["docx", "pdf", "pptx", "xlsx", "xls", "csv"], 
+        accept_multiple_files=True,
+        key="file_uploader"
+    )
 
-all_extra_text = []
-if uploaded_files is not None:
-    for f in uploaded_files:
-        try:
-            if f.name.endswith(".docx"): content = extract_from_docx(f)
-            elif f.name.endswith(".pdf"): content = extract_from_pdf(f)
-            elif f.name.endswith(".pptx"): content = extract_from_pptx(f)
-            elif f.name.endswith((".xlsx", ".xls")): content = extract_from_excel(f)
-            elif f.name.endswith(".csv"): content = extract_from_csv(f)
-            else: content = ""
-            
-            if content:
-                all_extra_text.append(f"--- ファイル名: {f.name} ---\n{content}")
-                st.sidebar.write(f"✔️ 資料読込済: {f.name}")
-        except Exception as e:
-            st.sidebar.error(f"❌ {f.name} の読込失敗: {str(e)}")
+    all_extra_text = []
+    if uploaded_files is not None:
+        for f in uploaded_files:
+            try:
+                if f.name.endswith(".docx"): content = extract_from_docx(f)
+                elif f.name.endswith(".pdf"): content = extract_from_pdf(f)
+                elif f.name.endswith(".pptx"): content = extract_from_pptx(f)
+                elif f.name.endswith((".xlsx", ".xls")): content = extract_from_excel(f)
+                elif f.name.endswith(".csv"): content = extract_from_csv(f)
+                else: content = ""
+                
+                if content:
+                    all_extra_text.append(f"--- ファイル名: {f.name} ---\n{content}")
+                    st.sidebar.write(f"✔️ 資料読込済: {f.name}")
+            except Exception as e:
+                st.sidebar.error(f"❌ {f.name} の読込失敗: {str(e)}")
 
-st.sidebar.markdown("---")
+    st.sidebar.markdown("---")
 
-# 6-2. 出力フォーマットサンプルの読込とクリア
-st.sidebar.subheader("📋 出力フォーマットサンプルの読込")
-st.sidebar.markdown("<small>出力したいサンプルの形式を取り込み、その出力方法を確認できます</small>", unsafe_allow_html=True)
+    # 6-2. 出力フォーマットサンプルの読込とクリア
+    st.sidebar.subheader("📋 出力フォーマットサンプルの読込")
+    st.sidebar.markdown("<small>出力したいサンプルの形式を取り込み、その出力方法を確認できます</small>", unsafe_allow_html=True)
 
-# セッション状態でのサンプルデータ保持
-if "format_samples" not in st.session_state:
-    st.session_state.format_samples = []
-if "format_file_names" not in st.session_state:
-    st.session_state.format_file_names = []
-
-uploaded_format = st.sidebar.file_uploader(
-    "出力サンプル (Word, PDF, PPT, Excel, CSV, Text)", 
-    type=["docx", "pdf", "pptx", "xlsx", "xls", "csv", "txt"],
-    key="format_uploader"
-)
-
-if uploaded_format:
-    f_name = uploaded_format.name
-    if f_name not in st.session_state.format_file_names:
-        try:
-            if f_name.endswith(".docx"): content = extract_from_docx(uploaded_format)
-            elif f_name.endswith(".pdf"): content = extract_from_pdf(uploaded_format)
-            elif f_name.endswith(".pptx"): content = extract_from_pptx(uploaded_format)
-            elif f_name.endswith((".xlsx", ".xls")): content = extract_from_excel(uploaded_format)
-            elif f_name.endswith(".csv"): content = extract_from_csv(uploaded_format)
-            elif f_name.endswith(".txt"): content = extract_from_text(uploaded_format)
-            else: content = ""
-            
-            if content:
-                st.session_state.format_samples.append(f"--- サンプルファイル名: {f_name} ---\n{content}")
-                st.session_state.format_file_names.append(f_name)
-        except Exception as e:
-            st.sidebar.error(f"❌ {f_name} の読込失敗: {str(e)}")
-
-# 読み込まれている出力フォーマットサンプルの表示
-if st.session_state.format_file_names:
-    st.sidebar.write("📌 現在取り込まれているサンプル:")
-    for name in st.session_state.format_file_names:
-        st.sidebar.write(f"・ {name}")
-    
-    # サンプルのクリアボタン
-    if st.sidebar.button("🗑️ 出力フォーマットサンプルをクリア"):
+    # セッション状態でのサンプルデータ保持
+    if "format_samples" not in st.session_state:
         st.session_state.format_samples = []
+    if "format_file_names" not in st.session_state:
         st.session_state.format_file_names = []
-        st.sidebar.success("サンプルファイルをクリアしました。")
+
+    uploaded_format = st.sidebar.file_uploader(
+        "出力サンプル (Word, PDF, PPT, Excel, CSV, Text)", 
+        type=["docx", "pdf", "pptx", "xlsx", "xls", "csv", "txt"],
+        key="format_uploader"
+    )
+
+    if uploaded_format:
+        f_name = uploaded_format.name
+        if f_name not in st.session_state.format_file_names:
+            try:
+                if f_name.endswith(".docx"): content = extract_from_docx(uploaded_format)
+                elif f_name.endswith(".pdf"): content = extract_from_pdf(uploaded_format)
+                elif f_name.endswith(".pptx"): content = extract_from_pptx(uploaded_format)
+                elif f_name.endswith((".xlsx", ".xls")): content = extract_from_excel(uploaded_format)
+                elif f_name.endswith(".csv"): content = extract_from_csv(uploaded_format)
+                elif f_name.endswith(".txt"): content = extract_from_text(uploaded_format)
+                else: content = ""
+                
+                if content:
+                    st.session_state.format_samples.append(f"--- サンプルファイル名: {f_name} ---\n{content}")
+                    st.session_state.format_file_names.append(f_name)
+            except Exception as e:
+                st.sidebar.error(f"❌ {f_name} の読込失敗: {str(e)}")
+
+    # 読み込まれている出力フォーマットサンプルの表示
+    if st.session_state.format_file_names:
+        st.sidebar.write("📌 現在取り込まれているサンプル:")
+        for name in st.session_state.format_file_names:
+            st.sidebar.write(f"・ {name}")
+        
+        # サンプルのクリアボタン
+        if st.sidebar.button("🗑️ 出力フォーマットサンプルをクリア"):
+            st.session_state.format_samples = []
+            st.session_state.format_file_names = []
+            st.sidebar.success("サンプルファイルをクリアしました。")
+            safe_rerun()
+
+    st.sidebar.markdown("---")
+    
+    # セキュリティ警告（コンテナキルによるOh no.化）を完全に回避する仮想停止
+    if st.sidebar.button("🛑 アプリを終了する"):
+        st.session_state.app_terminated = True
+        st.sidebar.warning("システムを仮想停止しました。再起動するにはリロードしてください。")
         safe_rerun()
 
-st.sidebar.markdown("---")
-if st.sidebar.button("🛑 アプリを終了する"):
-    st.sidebar.warning("システムを終了します。")
-    try:
-        os.kill(os.getpid(), signal.SIGINT)
-    except Exception as e:
-        st.sidebar.error(f"終了処理に失敗しました: {e}")
+    # --- 7. セッション状態の初期化 ---
+    if "messages" not in st.session_state:
+        st.session_state.messages = [{
+            "role": "assistant", 
+            "content": "「預かり資産トータルクエリーサービス」AIFAQアプリへようこそ。投資信託の実績集計や軽技WEBの操作、標準クエリの活用方法について何でもご質問ください。マニュアル資料や、再現したい出力サンプルのフォーマットを左側のメニューからアップロードしていただければ、具体的な操作方法やデータ抽出の手順をご案内いたします。"
+        }]
 
-# --- 7. セッション状態の初期化 ---
-if "messages" not in st.session_state:
-    st.session_state.messages = [{
-        "role": "assistant", 
-        "content": "「預かり資産トータルクエリーサービス」AIFAQアプリへようこそ。投資信託の実績集計や軽技WEBの操作、標準クエリの活用方法について何でもご質問ください。マニュアル資料や、再現したい出力サンプルのフォーマットを左側のメニューからアップロードしていただければ、具体的な操作方法やデータ抽出の手順をご案内いたします。"
-    }]
+    # --- 8. メインエリアのチャットレイアウト ---
+    if st.session_state.format_file_names:
+        st.info(f"💡 出力フォーマットサンプル（{', '.join(st.session_state.format_file_names)}）が読み込まれています。チャットで「このサンプルを出力するには？」等と質問してみてください。")
+    else:
+        st.info(f"💡 マニュアルを読み込ませる場合や、特定の出力サンプルに基づいて抽出手順を知りたい場合は、左側のサイドバーからファイルをアップロードしてください。")
 
-# --- 8. メインエリアのチャットレイアウト ---
-# お知らせ表示
-if st.session_state.format_file_names:
-    st.info(f"💡 出力フォーマットサンプル（{', '.join(st.session_state.format_file_names)}）が読み込まれています。チャットで「このサンプルを出力するには？」等と質問してみてください。")
-else:
-    st.info(f"💡 マニュアルを読み込ませる場合や、特定の出力サンプルに基づいて抽出手順を知りたい場合は、左側のサイドバーからファイルをアップロードしてください。")
+    # チャット履歴をLINE風に描画
+    chat_placeholder = st.container()
 
-# チャット履歴をLINE風に描画
-chat_placeholder = st.container()
-
-with chat_placeholder:
-    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-    for m in st.session_state.messages:
-        role_class = "chat-bubble-assistant" if m["role"] == "assistant" else "chat-bubble-user"
-        avatar = "🤖 AI" if m["role"] == "assistant" else "💼 ユーザー"
-        
-        st.markdown(f"""
-        <div class="{role_class}">
-            <div style="font-weight: bold; font-size: 12px; margin-bottom: 5px; opacity: 0.85;">{avatar}</div>
-            <div>{m["content"]}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ユーザー入力プロンプトの判定用変数 (Python 旧バージョンのウォルラス演算子互換性対策)
-prompt = None
-
-# Streamlitのバージョンに応じてチャット入力方法を自動分岐
-if has_chat_ui:
-    # 新しいStreamlitバージョンでのチャットUI (ウォルラス演算子を使用しない安全設計)
-    user_input = st.chat_input("クエリーサービスの質問内容を入力してください（例：スケジュール実行の方法は？等）")
-    if user_input:
-        prompt = user_input
-else:
-    # 旧型のStreamlitバージョンでの代替フォームUI（これで起動エラーが100%回避されます）
-    st.write("---")
-    with st.form(key="chat_input_form", clear_on_submit=True):
-        col1, col2 = st.columns([8, 2])
-        with col1:
-            user_input = st.text_input("質問内容を入力してください（送信後、履歴に追記されます）", placeholder="例：スケジュール実行の方法は？等")
-        with col2:
-            submitted = st.form_submit_button("送信")
-        
-        if submitted and user_input:
-            prompt = user_input
-
-# チャット入力が検知された場合の処理
-if prompt:
-    # 1. ユーザーメッセージをセッションに追加
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    
-    # 2. 即時反映（擬似的な描画）
     with chat_placeholder:
-        st.markdown(f"""
-        <div class="chat-bubble-user">
-            <div style="font-weight: bold; font-size: 12px; margin-bottom: 5px; opacity: 0.85;">💼 ユーザー</div>
-            <div>{prompt}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    # 3. AIアシスタント回答の生成
-    # st.chat_messageが使えない場合はクラシックな描画方式に切り替え
+        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+        for m in st.session_state.messages:
+            role_class = "chat-bubble-assistant" if m["role"] == "assistant" else "chat-bubble-user"
+            avatar = "🤖 AI" if m["role"] == "assistant" else "💼 ユーザー"
+            
+            st.markdown(f"""
+            <div class="{role_class}">
+                <div style="font-weight: bold; font-size: 12px; margin-bottom: 5px; opacity: 0.85;">{avatar}</div>
+                <div>{m["content"]}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    prompt = None
+
+    # Streamlitのバージョンに応じてチャット入力方法を自動分岐
     if has_chat_ui:
-        with st.chat_message("assistant", avatar="🤖"):
+        user_input = st.chat_input("クエリーサービスの質問内容を入力してください（例：スケジュール実行の方法は？等）")
+        if user_input:
+            prompt = user_input
+    else:
+        st.write("---")
+        with st.form(key="chat_input_form", clear_on_submit=True):
+            col1, col2 = st.columns([8, 2])
+            with col1:
+                user_input = st.text_input("質問内容を入力してください（送信後、履歴に追記されます）", placeholder="例：スケジュール実行の方法は？等")
+            with col2:
+                submitted = st.form_submit_button("送信")
+            
+            if submitted and user_input:
+                prompt = user_input
+
+    # チャット入力が検知された場合の処理
+    if prompt:
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        
+        with chat_placeholder:
+            st.markdown(f"""
+            <div class="chat-bubble-user">
+                <div style="font-weight: bold; font-size: 12px; margin-bottom: 5px; opacity: 0.85;">💼 ユーザー</div>
+                <div>{prompt}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        if has_chat_ui:
+            with st.chat_message("assistant", avatar="🤖"):
+                with st.spinner("該当する情報を確認して回答を作成中..."):
+                    res = get_ai_roleplay_response(
+                        st.session_state.messages, 
+                        current_persona, 
+                        all_extra_text, 
+                        st.session_state.format_samples,
+                        ACTIVE_API_KEY
+                    )
+                    st.markdown(res)
+        else:
             with st.spinner("該当する情報を確認して回答を作成中..."):
                 res = get_ai_roleplay_response(
                     st.session_state.messages, 
@@ -573,18 +585,16 @@ if prompt:
                     st.session_state.format_samples,
                     ACTIVE_API_KEY
                 )
-                st.markdown(res)
-    else:
-        with st.spinner("該当する情報を確認して回答を作成中..."):
-            res = get_ai_roleplay_response(
-                st.session_state.messages, 
-                current_persona, 
-                all_extra_text, 
-                st.session_state.format_samples,
-                ACTIVE_API_KEY
-            )
-            st.info(res)
-        
-    # 4. 回答をセッション履歴へ格納し、安全に再同期
-    st.session_state.messages.append({"role": "assistant", "content": res})
-    safe_rerun()
+                st.info(res)
+            
+        st.session_state.messages.append({"role": "assistant", "content": res})
+        safe_rerun()
+
+
+# --- 🚨 例外を完全にトラップする超堅牢化セーフティネットの実行 ---
+try:
+    main_app()
+except Exception as main_error:
+    st.error("🚨 アプリケーションの実行中に予期せぬエラーが一時的に検知されました。")
+    st.warning("このエラーは、外部接続環境またはライブラリのパース競合に起因する可能性があります。以下に詳細を表示します。")
+    st.exception(main_error)
