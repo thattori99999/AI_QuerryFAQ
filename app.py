@@ -161,7 +161,7 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
 
     target_model = get_safe_model_name(api_key)
     
-    # トークン爆発を防群ため、AIに送る「過去の履歴」を最新の6発言（3往復）に限定
+    # トークン爆発を防ぐため、AIに送る「過去の履歴」を最新の6発言（3往復）に限定
     recent_messages = [messages[0]] + messages[-5:] if len(messages) > 6 else messages
 
     for attempt in range(5):
@@ -497,10 +497,5 @@ def main_app():
         safe_rerun()
 
 
-# --- 🚨 例外を完全にトラップする超堅牢化セーフティネットの実行 ---
-try:
-    main_app()
-except Exception as main_error:
-    st.error("🚨 アプリケーションの実行中にエラーが発生しました。")
-    st.warning("お手数ですが、GitHubリポジトリに requirements.txt が存在することを確認し、内容が正しくデプロイされているか検証してください。")
-    st.exception(main_error)
+# --- メインロジックを実行 ---
+main_app()
