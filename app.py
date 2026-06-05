@@ -3,15 +3,34 @@ import streamlit as st
 import pandas as pd
 import google.generativeai as genai
 from google.api_core import exceptions  # Rate Limit(429) エラーを確実に捕捉するため
-from docx import Document
-from PyPDF2 import PdfReader
-from pptx import Presentation
 import io
 import configparser
 import os
 import signal
 import re
 import time  # リトライ待機（スリープ）処理のため
+
+# --- 外部ライブラリの安全なインポート (インポートエラーによるアプリ即死を完全に回避するセーフガード) ---
+import_errors = []
+
+try:
+    from docx import Document
+except ImportError:
+    import_errors.append("python-docx")
+    Document = None
+
+try:
+    from PyPDF2 import PdfReader
+except ImportError:
+    import_errors.append("PyPDF2")
+    PdfReader = None
+
+try:
+    from pptx import Presentation
+except ImportError:
+    import_errors.append("python-pptx")
+    Presentation = None
+
 
 # --- 1. APIキーの設定 (APIKEY.ini または クラウドのSecretsからハイブリッド取得) ---
 # ※既存のAPI取得ロジックの構造・変数名を1行も崩さずに、クラウド安全対策を内包させています
@@ -40,38 +59,60 @@ def load_api_key():
 INI_KEY = load_api_key()
 EMBEDDED_API_KEY = INI_KEY
 
-# --- 2. 各ファイル抽出関数 ---
+# --- 2. 各ファイル抽出関数 (ポインタを先頭に戻す seek(0) を追加してEOFクラッシュを防止) ---
 def extract_from_docx(file):
-    doc = Document(file)
-    return "\n".join([para.text for para in doc.paragraphs])
+    if Document is None:
+        return "[システム警告] python-docx パッケージがインストールされていないため、Wordファイルを解析できません。 requirements.txt に追加してください。"
+    try:
+        file.seek(0)
+        doc = Document(file)
+        return "\n".join([para.text for para in doc.paragraphs])
+    except Exception as e:
+        return f"[Word読込エラー] {str(e)}"
 
 def extract_from_pdf(file):
-    reader = PdfReader(file)
-    return "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+    if PdfReader is None:
+        return "[システム警告] PyPDF2 パッケージがインストールされていないため、PDFファイルを解析できません。 requirements.txt に追加してください。"
+    try:
+        file.seek(0)
+        reader = PdfReader(file)
+        return "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+    except Exception as e:
+        return f"[PDF読込エラー] {str(e)}"
 
 def extract_from_pptx(file):
-    prs = Presentation(file)
-    text_runs = []
-    for slide in prs.slides:
-        for shape in slide.shapes:
-            if hasattr(shape, "text"):
-                text_runs.append(shape.text)
-    return "\n".join(text_runs)
+    if Presentation is None:
+        return "[システム警告] python-pptx パッケージがインストールされていないため、PowerPointファイルを解析できません。 requirements.txt に追加してください。"
+    try:
+        file.seek(0)
+        prs = Presentation(file)
+        text_runs = []
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    text_runs.append(shape.text)
+        return "\n".join(text_runs)
+    except Exception as e:
+        return f"[PowerPoint読込エラー] {str(e)}"
 
 def extract_from_excel(file):
-    all_sheets = pd.read_excel(file, sheet_name=None)
-    text_data = []
-    for sheet_name, df in all_sheets.items():
-        text_data.append(f"--- シート名: {sheet_name} ---\n{df.to_string(index=False)}")
-    return "\n".join(text_data)
+    try:
+        file.seek(0)
+        all_sheets = pd.read_excel(file, sheet_name=None)
+        text_data = []
+        for sheet_name, df in all_sheets.items():
+            text_data.append(f"--- シート名: {sheet_name} ---\n{df.to_string(index=False)}")
+        return "\n".join(text_data)
+    except Exception as e:
+        return f"[Excel読込エラー] {str(e)}\n※xlsxファイル読込には openpyxl パッケージが必要です。"
 
 def extract_from_csv(file):
     try:
+        file.seek(0)
         df = pd.read_csv(file)
         return df.to_string(index=False)
     except Exception:
         try:
-            # Shift-JISなど別エンコーディングのフォールバック
             file.seek(0)
             df = pd.read_csv(file, encoding="shift-jis")
             return df.to_string(index=False)
@@ -80,6 +121,7 @@ def extract_from_csv(file):
 
 def extract_from_text(file):
     try:
+        file.seek(0)
         return file.read().decode("utf-8")
     except Exception:
         try:
@@ -269,6 +311,13 @@ st.sidebar.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# インポートエラー検知時の自己申告メッセージ
+if import_errors:
+    st.sidebar.warning(
+        f"⚠️ 以下の必須パッケージがデプロイ環境にインストールされていません。マニュアル読み込み時の一部形式が制限されます。解決するには `requirements.txt` へ追記してください。\n"
+        f"不足パッケージ: {', '.join(import_errors)}"
+    )
+
 # APIキー設定（最優先されるカスタムキー入力欄）
 st.sidebar.subheader("🔑 APIキーの設定")
 custom_api_key = st.sidebar.text_input(
@@ -312,7 +361,7 @@ if uploaded_files:
             all_extra_text.append(f"--- ファイル名: {f.name} ---\n{content}")
             st.sidebar.write(f"✔️ 資料読込済: {f.name}")
         except Exception as e:
-            st.sidebar.error(f"❌ {f.name} の読込失敗")
+            st.sidebar.error(f"❌ {f.name} の読込失敗: {str(e)}")
 
 st.sidebar.markdown("---")
 
@@ -346,7 +395,7 @@ if uploaded_format:
             st.session_state.format_samples.append(f"--- サンプルファイル名: {f_name} ---\n{content}")
             st.session_state.format_file_names.append(f_name)
         except Exception as e:
-            st.sidebar.error(f"❌ {f_name} の読込失敗")
+            st.sidebar.error(f"❌ {f_name} の読込失敗: {str(e)}")
 
 # 読み込まれている出力フォーマットサンプルの表示
 if st.session_state.format_file_names:
@@ -398,17 +447,21 @@ with chat_placeholder:
         """, unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# チャット入力
+# チャット入力処理（二重リライトを防ぎ、直感的かつ安定して即時AIが返答するイベントフロー）
 if prompt := st.chat_input("クエリーサービスの質問内容を入力してください（例：スケジュール実行の方法は？等）"):
-    # ユーザーの発言をセッションへ保存
+    # 1. ユーザーメッセージをセッションに追加
     st.session_state.messages.append({"role": "user", "content": prompt})
-    st.rerun()
-
-# ユーザーの新規投稿に対するAI回答処理
-if st.session_state.messages[-1]["role"] == "user":
-    user_prompt = st.session_state.messages[-1]["content"]
     
-    # LINE風チャットの自然な応答待ちスピナー
+    # 2. 画面に即座にユーザーメッセージを反映させながら、AI回答生成へシームレスに移行
+    with chat_placeholder:
+        st.markdown(f"""
+        <div class="chat-bubble-user">
+            <div style="font-weight: bold; font-size: 12px; margin-bottom: 5px; opacity: 0.85;">💼 ユーザー</div>
+            <div>{prompt}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    # 3. AIアシスタント回答の生成
     with st.chat_message("assistant", avatar="🤖"):
         with st.spinner("該当する情報を確認して回答を作成中..."):
             res = get_ai_roleplay_response(
@@ -420,5 +473,6 @@ if st.session_state.messages[-1]["role"] == "user":
             )
             st.markdown(res)
         
+    # 4. 回答をセッション履歴へ格納し、安全に1回だけ画面をリフレッシュ
     st.session_state.messages.append({"role": "assistant", "content": res})
     st.rerun()
