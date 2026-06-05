@@ -3,7 +3,7 @@ import streamlit as st
 
 # --- 1. ページタイトルを動的に変更するためのセッション状態の初期化 ---
 if "app_title" not in st.session_state:
-    st.session_state.app_title = "🤖 汎用 AIFAQチャットシステム"
+    st.session_state.app_title = "🤖 汎用 AIFAQシステム"
 
 # --- 【最優先ルール】Streamlitのページ構成設定は、他のあらゆるコマンドより先に最上部で実行します ---
 st.set_page_config(page_title=st.session_state.app_title, layout="wide")
@@ -215,7 +215,7 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
 【預かり資産トータルクエリーサービスに関する絶対判定ルール】
 もしアップロードされた資料の内容や質問の文脈が「預かり資産トータルクエリーサービス」に関連する場合、ユーザーのやりたいデータ抽出や操作要望に対して、以下の思考プロセスを厳格に適用して回答を構成してください。
 1. **「標準クエリ（約200種類）の確認」**: まず第一に、ユーザーのやりたい要件にそのまま合致する既存の標準クエリがすでに提供されているかをマニュアル内のクエリ一覧テーブル等から判断して案内してください。
-2. **「既存クエリの修正・加工方法」**: もし完全に合致する既存の標準クエリがそのままでは見つからない場合、どの標準クエリをベース（ひな形）に選択し、それをどのように修正（項目追加、結合、フィルター条件の編集など）すれば目的の結果が得られるかを、具体的かつ分かりやすい手順として説明してください。
+2. **「既存クエリの修正・加工方法」**: もし完全に合致する既存の標準クエリがそのままでは見つからない場合、どの標準クエリをベース（ひな形）に選択し、それをように修正（項目追加、結合、フィルター条件の編集など）すれば目的の結果が得られるかを、具体的かつ分かりやすい手順として説明してください。
 
 【回答の絶対ルール】
 1. ユーザーの質問に対し、アップロードされたマニュアルの情報を最も信頼できる「絶対の基準（最優先情報）」として参照し、正確に回答を構成してください。
@@ -552,11 +552,11 @@ font-family: 'BIZ UDゴシック', sans-serif !important;
             row_class = "chat-row-assistant" if m["role"] == "assistant" else "chat-row-user"
             bubble_class = "chat-bubble-assistant" if m["role"] == "assistant" else "chat-bubble-user"
             
-            # 発言者に合わせた絵文字と大きなアイコンのHTML
+            # 発言者に合わせた絵文字と大きなアイコンのHTML（「あなた」に明確に変更）
             if m["role"] == "assistant":
                 avatar_html = '<span class="chat-icon">🤖</span> AIアシスタント'
             else:
-                avatar_html = '<span class="chat-icon">💼</span> ユーザー（本部担当）'
+                avatar_html = '<span class="chat-icon">💼</span> あなた（入力者）'
             
             st.markdown(f"""
             <div class="{row_class}">
@@ -578,7 +578,7 @@ font-family: 'BIZ UDゴシック', sans-serif !important;
             st.markdown(f"""
             <div class="chat-row-user">
                 <div class="chat-bubble-user">
-                    <div class="chat-header"><span class="chat-icon">💼</span> ユーザー（本部担当）</div>
+                    <div class="chat-header"><span class="chat-icon">💼</span> あなた（入力者）</div>
                     <div>{prompt}</div>
                 </div>
             </div>
