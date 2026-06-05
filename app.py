@@ -4,6 +4,12 @@ import streamlit as st
 # --- 【最優先ルール】Streamlitのページ構成設定は、他のあらゆるコマンドより先に最上部で実行します ---
 st.set_page_config(page_title="預かり資産トータルクエリーサービス AIFAQ", layout="wide")
 
+import pandas as pd
+import google.generativeai as genai
+from google.api_core import exceptions  # Rate Limit(429) エラーを確実に捕捉するため
+from docx import Document
+from PyPDF2 import PdfReader
+from pptx import Presentation
 import io
 import configparser
 import os
@@ -12,7 +18,7 @@ import re
 import time  # リトライ待機（スリープ）処理のため
 
 # --- 1. APIキーの設定 (APIKEY.ini または クラウドのSecretsからハイブリッド取得) ---
-# ※既存のAPI取得ロジックの構造・変数名を1行も崩さずに、クラウド安全対策を内包させています
+# ※既存 of API取得ロジックの構造・変数名を1行も崩さずに、クラウド安全対策を内包させています
 def load_api_key():
     # 1. まずローカルの APIKEY.ini を探す
     config = configparser.ConfigParser()
@@ -26,18 +32,12 @@ def load_api_key():
             
     # 2. もしローカルにファイルがなければ、Streamlit Cloudの「Secrets」から安全に取得する
     try:
-        if hasattr(st, "secrets") and st.secrets is not None:
-            if "GEMINI" in st.secrets:
-                gemini_sec = st.secrets["GEMINI"]
-                if hasattr(gemini_sec, "get"):
-                    key = gemini_sec.get("API_KEY", None)
-                    if key: return key
-                elif isinstance(gemini_sec, dict) and "API_KEY" in gemini_sec:
-                    return gemini_sec["API_KEY"]
-            if "API_KEY" in st.secrets:
-                return st.secrets["API_KEY"]
-    except Exception:
-        pass
+        if "GEMINI" in st.secrets and "API_KEY" in st.secrets["GEMINI"]:
+            return st.secrets["GEMINI"]["API_KEY"]
+        elif "API_KEY" in st.secrets:
+            return st.secrets["API_KEY"]
+    except:
+        return None
         
     return None
 
@@ -45,73 +45,41 @@ INI_KEY = load_api_key()
 EMBEDDED_API_KEY = INI_KEY
 
 
-# --- 2. 各ファイル抽出関数 (ポインタを先頭に戻す seek(0) を追加し、かつ必要なときだけインポートする動的ロード設計) ---
+# --- 2. 各ファイル抽出関数 (ポインタを先頭に戻す seek(0) を追加して読み込みエラーを完全に防止) ---
 def extract_from_docx(file):
-    try:
-        from docx import Document
-    except ImportError:
-        return "[警告] python-docx がインストールされていません。Wordファイルの読み込みには requirements.txt に python-docx を追記してください。"
-    try:
-        file.seek(0)
-        doc = Document(file)
-        return "\n".join([para.text for para in doc.paragraphs])
-    except Exception as e:
-        return f"[Word読込エラー] {str(e)}"
+    file.seek(0)
+    doc = Document(file)
+    return "\n".join([para.text for para in doc.paragraphs])
 
 def extract_from_pdf(file):
-    try:
-        from PyPDF2 import PdfReader
-    except ImportError:
-        return "[警告] PyPDF2 がインストールされていません。PDFファイルの読み込みには requirements.txt に PyPDF2 を追記してください。"
-    try:
-        file.seek(0)
-        reader = PdfReader(file)
-        return "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
-    except Exception as e:
-        return f"[PDF読込エラー] {str(e)}"
+    file.seek(0)
+    reader = PdfReader(file)
+    return "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
 
 def extract_from_pptx(file):
-    try:
-        from pptx import Presentation
-    except ImportError:
-        return "[警告] python-pptx がインストールされていません。パワーポイントの読み込みには requirements.txt に python-pptx を追記してください。"
-    try:
-        file.seek(0)
-        prs = Presentation(file)
-        text_runs = []
-        for slide in prs.slides:
-            for shape in slide.shapes:
-                if hasattr(shape, "text"):
-                    text_runs.append(shape.text)
-        return "\n".join(text_runs)
-    except Exception as e:
-        return f"[PowerPoint読込エラー] {str(e)}"
+    file.seek(0)
+    prs = Presentation(file)
+    text_runs = []
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if hasattr(shape, "text"):
+                text_runs.append(shape.text)
+    return "\n".join(text_runs)
 
 def extract_from_excel(file):
-    try:
-        import pandas as pd
-    except ImportError:
-        return "[警告] pandas がインストールされていません。Excelファイルの読み込みには requirements.txt に pandas と openpyxl を追記してください。"
-    try:
-        file.seek(0)
-        all_sheets = pd.read_excel(file, sheet_name=None)
-        text_data = []
-        for sheet_name, df in all_sheets.items():
-            text_data.append(f"--- シート名: {sheet_name} ---\n{df.to_string(index=False)}")
-        return "\n".join(text_data)
-    except Exception as e:
-        return f"[Excel読込エラー] {str(e)}\n※xlsxファイル読込には openpyxl パッケージが必要です。"
+    file.seek(0)
+    all_sheets = pd.read_excel(file, sheet_name=None)
+    text_data = []
+    for sheet_name, df in all_sheets.items():
+        text_data.append(f"--- シート名: {sheet_name} ---\n{df.to_string(index=False)}")
+    return "\n".join(text_data)
 
 def extract_from_csv(file):
+    file.seek(0)
     try:
-        import pandas as pd
-    except ImportError:
-        return "[警告] pandas がインストールされていません。"
-    try:
-        file.seek(0)
         df = pd.read_csv(file)
         return df.to_string(index=False)
-    except Exception:
+    except:
         try:
             file.seek(0)
             df = pd.read_csv(file, encoding="shift-jis")
@@ -120,10 +88,10 @@ def extract_from_csv(file):
             return f"[CSV読込エラー] {str(e)}"
 
 def extract_from_text(file):
+    file.seek(0)
     try:
-        file.seek(0)
         return file.read().decode("utf-8")
-    except Exception:
+    except:
         try:
             file.seek(0)
             return file.read().decode("shift-jis")
@@ -133,10 +101,6 @@ def extract_from_text(file):
 
 # --- 404エラーを回避しつつ、利用可能なモデル名を安全に取得する関数 ---
 def get_safe_model_name(api_key):
-    try:
-        import google.generativeai as genai
-    except ImportError:
-        return 'gemini-1.5-flash'
     try:
         genai.configure(api_key=api_key)
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
@@ -152,13 +116,6 @@ def get_safe_model_name(api_key):
 
 # --- 3. AI回答生成ロジック (自動リトライ・履歴ウィンドウ削減版) ---
 def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_key):
-    try:
-        import google.generativeai as genai
-        from google.api_core import exceptions
-        ResourceExhaustedException = exceptions.ResourceExhausted
-    except ImportError:
-        return "【システムエラー】Google Gemini APIライブラリ(google-generativeai)が正常にロードされていません。requirements.txtに追記してください。"
-
     target_model = get_safe_model_name(api_key)
     
     # トークン爆発を防ぐため、AIに送る「過去の履歴」を最新の6発言（3往復）に限定
@@ -212,9 +169,9 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
             response = model.generate_content(system_prompt)
             return response.text
 
-        except (ResourceExhaustedException, Exception) as e:
+        except (exceptions.ResourceExhausted, Exception) as e:
             error_msg = str(e)
-            if "429" in error_msg or isinstance(e, ResourceExhaustedException):
+            if "429" in error_msg or isinstance(e, exceptions.ResourceExhausted):
                 wait_time = (attempt + 1) * 10
                 time.sleep(wait_time)
                 continue
@@ -223,26 +180,14 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
     return "【混雑エラー】現在AIへのリクエストが連続しています。無料枠の制限を超過したため、1分ほど待ってから再度送信してください。"
 
 
-# --- Rerun処理の安全な抽象化 (古いStreamlit環境でも絶対にクラッシュさせないフォールバック) ---
-def safe_rerun():
-    try:
-        st.rerun()
-    except AttributeError:
-        try:
-            st.experimental_rerun()
-        except AttributeError:
-            pass
-
-
 # --- 4. アプリケーションのメインロジック ---
 def main_app():
     if st.session_state.get("app_terminated", False):
         st.warning("🛑 システムは終了しました。再度ご利用になる場合は、ブラウザをリロード（再読み込み）してください。")
         st.stop()
 
-    has_chat_ui = hasattr(st, "chat_input") and hasattr(st, "chat_message")
-
-    # あたたかみのある緑ベースのカラーテーマ & LINE風チャットスタイリング (3色をベースに構成)
+    # あたたかみのある緑ベースのカラーテーマ & LINE風チャットデザイン
+    # メインカラー3色: 深緑（#2E7D32）、薄緑（#F1F8E9）、チャット背景白（#FFFFFF）
     st.markdown("""
     <style>
         .stApp {
@@ -265,6 +210,8 @@ def main_app():
             background-color: #2E7D32 !important;
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
+        
+        /* LINE風チャットコンテナと吹き出し */
         .chat-container {
             display: flex;
             flex-direction: column;
@@ -308,11 +255,12 @@ def main_app():
 
     current_persona = {
         "service_name": "預かり資産トータルクエリーサービス",
-        "overview": "軽技WEBというBIツールを利用した、投資信託の実績集計などが行える金融機関の本部担当者向けサービス。",
+        "overview": "軽技WEBというBIツールを利用した、投資信託の実績集計などが行える金融機関の本部担当者向け service。",
         "architecture": "顧客（投資家）の契約情報、取引履歴、残高、損益情報を保管しているデータベース「Fund Organizer」を参照元として、本部担当者のブラウザから「軽技WEB」を利用して接続し、データを取得する。",
         "features": "①約200の標準クエリから業務要件に合わせたクエリを選択して実行\n②標準クエリを編集しフレキシブルに加工・保存が可能\n③データ取得結果をCSV/Excel形式で保存が可能\n④スケジュール実行で業務の効率化を実現\n⑤専門の担当者による手厚いサポート"
     }
 
+    # --- 左側サイドバー情報入力メニュー ---
     st.sidebar.markdown("""
     <div style="background-color: #2E7D32; padding: 12px; border-radius: 10px; margin-bottom: 15px; text-align: center;">
         <h3 style="color: white; margin: 0; font-size: 16px;">📁 コントロールパネル</h3>
@@ -326,6 +274,7 @@ def main_app():
         help="入力した場合、このAPIキーを優先して使用します。未入力時はシステムのデフォルトAPIキーを利用します。"
     )
 
+    # APIキーの優先度選択
     ACTIVE_API_KEY = custom_api_key if custom_api_key else EMBEDDED_API_KEY
 
     if not ACTIVE_API_KEY:
@@ -338,16 +287,17 @@ def main_app():
 
     st.sidebar.markdown("---")
 
+    # 1. 情報入力用マニュアルファイル
     st.sidebar.subheader("📄 マニュアル資料の読込")
     uploaded_files = st.sidebar.file_uploader(
-        "マニュアル資料 (Word, PDF, PPT, Excel, CSV)", 
+        "資料 (Excel, Word, PDF, CSV, PPT)", 
         type=["docx", "pdf", "pptx", "xlsx", "xls", "csv"], 
         accept_multiple_files=True,
         key="file_uploader"
     )
 
     all_extra_text = []
-    if uploaded_files is not None:
+    if uploaded_files:
         for f in uploaded_files:
             try:
                 if f.name.endswith(".docx"): content = extract_from_docx(f)
@@ -365,8 +315,9 @@ def main_app():
 
     st.sidebar.markdown("---")
 
+    # 2. 出力フォーマットサンプル読込
     st.sidebar.subheader("📋 出力フォーマットサンプルの読込")
-    st.sidebar.markdown("<small>出力したいサンプルの形式を取り込み、その出力方法を確認できます</small>", unsafe_allow_html=True)
+    st.sidebar.markdown("<small>出力したいサンプルの形式を取り込み、出力手順を確認できます</small>", unsafe_allow_html=True)
 
     if "format_samples" not in st.session_state:
         st.session_state.format_samples = []
@@ -374,7 +325,7 @@ def main_app():
         st.session_state.format_file_names = []
 
     uploaded_format = st.sidebar.file_uploader(
-        "出力サンプル (Word, PDF, PPT, Excel, CSV, Text)", 
+        "出力サンプル (Excel, Word, PDF, CSV, PPT, TXT)", 
         type=["docx", "pdf", "pptx", "xlsx", "xls", "csv", "txt"],
         key="format_uploader"
     )
@@ -402,23 +353,25 @@ def main_app():
         for name in st.session_state.format_file_names:
             st.sidebar.write(f"・ {name}")
         
+        # クリア機能
         if st.sidebar.button("🗑️ 出力フォーマットサンプルをクリア"):
             st.session_state.format_samples = []
             st.session_state.format_file_names = []
             st.sidebar.success("サンプルファイルをクリアしました。")
-            safe_rerun()
+            st.rerun()
 
     st.sidebar.markdown("---")
     
     if st.sidebar.button("🛑 アプリを終了する"):
         st.session_state.app_terminated = True
         st.sidebar.warning("システムを終了しました。")
-        safe_rerun()
+        st.rerun()
 
+    # --- 5. セッション状態の初期化 ---
     if "messages" not in st.session_state:
         st.session_state.messages = [{
             "role": "assistant", 
-            "content": "「預かり資産トータルクエリーサービス」AIFAQアプリへようこそ。投資信託の実績集計や軽技WEBの操作、標準クエリの活用方法について何でもご質問ください。マニュアル資料や、再現したい出力サンプルのフォーマットを左側のメニューからアップロードしていただければ、具体的な操作方法やデータ抽出の手順をご案内いたします。"
+            "content": "「預かり資産トータルクエリーサービス」AIFAQアプリへようこそ。投資信託の実績集計や軽技WEBの操作、標準クエリの活用方法について何でもご質問ください。マニュアル資料や再現したい出力サンプルのフォーマットを左側のメニューからアップロードしていただければ、具体的な操作方法やデータ抽出の手順をご案内いたします。"
         }]
 
     if st.session_state.format_file_names:
@@ -426,6 +379,7 @@ def main_app():
     else:
         st.info(f"💡 マニュアルを読み込ませる場合や、特定の出力サンプルに基づいて抽出手順を知りたい場合は、左側のサイドバーからファイルをアップロードしてください。")
 
+    # チャット履歴をLINE風に描画
     chat_placeholder = st.container()
 
     with chat_placeholder:
@@ -442,25 +396,8 @@ def main_app():
             """, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    prompt = None
-
-    if has_chat_ui:
-        user_input = st.chat_input("クエリーサービスの質問内容を入力してください（例：スケジュール実行の方法は？等）")
-        if user_input:
-            prompt = user_input
-    else:
-        st.write("---")
-        with st.form(key="chat_input_form", clear_on_submit=True):
-            col1, col2 = st.columns([8, 2])
-            with col1:
-                user_input = st.text_input("質問内容を入力してください（送信後、履歴に追記されます）", placeholder="例：スケジュール実行の方法は？等")
-            with col2:
-                submitted = st.form_submit_button("送信")
-            
-            if submitted and user_input:
-                prompt = user_input
-
-    if prompt:
+    # ユーザー入力を受付
+    if prompt := st.chat_input("クエリーサービスの質問内容を入力してください（例：スケジュール実行の方法は？等）"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         
         with chat_placeholder:
@@ -471,18 +408,7 @@ def main_app():
             </div>
             """, unsafe_allow_html=True)
             
-        if has_chat_ui:
-            with st.chat_message("assistant", avatar="🤖"):
-                with st.spinner("該当する情報を確認して回答を作成中..."):
-                    res = get_ai_roleplay_response(
-                        st.session_state.messages, 
-                        current_persona, 
-                        all_extra_text, 
-                        st.session_state.format_samples,
-                        ACTIVE_API_KEY
-                    )
-                    st.markdown(res)
-        else:
+        with st.chat_message("assistant", avatar="🤖"):
             with st.spinner("該当する情報を確認して回答を作成中..."):
                 res = get_ai_roleplay_response(
                     st.session_state.messages, 
@@ -491,11 +417,10 @@ def main_app():
                     st.session_state.format_samples,
                     ACTIVE_API_KEY
                 )
-                st.info(res)
+                st.markdown(res)
             
         st.session_state.messages.append({"role": "assistant", "content": res})
-        safe_rerun()
-
+        st.rerun()
 
 # --- メインロジックを実行 ---
 main_app()
