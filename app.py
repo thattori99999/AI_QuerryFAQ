@@ -1,17 +1,25 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
-import pandas as pd
-import google.generativeai as genai
-from google.api_core import exceptions  # Rate Limit(429) エラーを確実に捕捉するため
-import io
-import configparser
-import os
-import signal
-import re
-import time  # リトライ待機（スリープ）処理のため
 
-# --- 外部ライブラリの安全なインポート (インポートエラーによるアプリ即死を完全に回避するセーフガード) ---
+# --- 最優先ルール: Streamlitのページ構成設定を、すべてのコマンドに先駆けて先頭で実行します ---
+st.set_page_config(page_title="預かり資産トータルクエリーサービス AIFAQ", layout="wide")
+
+# --- 外部ライブラリの安全なインポート (インポートエラーによるアプリ起動即死を完全に回避する超堅牢設計) ---
 import_errors = []
+
+try:
+    import pandas as pd
+except ImportError:
+    import_errors.append("pandas")
+    pd = None
+
+try:
+    import google.generativeai as genai
+    from google.api_core import exceptions  # Rate Limit(429) エラーを確実に捕捉するため
+except Exception as e:
+    import_errors.append("google-generativeai")
+    genai = None
+    exceptions = None
 
 try:
     from docx import Document
@@ -31,6 +39,45 @@ except ImportError:
     import_errors.append("python-pptx")
     Presentation = None
 
+# Excelパース用のopenpyxl確認
+try:
+    import openpyxl
+except ImportError:
+    import_errors.append("openpyxl")
+    openpyxl = None
+
+import io
+import configparser
+import os
+import signal
+import re
+import time  # リトライ待機（スリープ）処理のため
+
+# --- 必須コアパッケージがサーバーに無い場合、クラッシュを防止し、解決手順のガイド画面を親切に表示します ---
+if "google-generativeai" in import_errors or "pandas" in import_errors:
+    st.error("⚙️ アプリの起動に必要なシステムパッケージ（ライブラリ）がデプロイ環境に不足しています。")
+    st.markdown("""
+    ### 🛠️ 解決方法 (Streamlit Cloudでの手順)
+    
+    Streamlit Cloudなどのサーバー環境で外部ライブラリを有効化するには、プロジェクトのルートフォルダに **`requirements.txt`** ファイルを配置する必要があります。
+    
+    GitHubリポジトリ内に **`requirements.txt`** という名前のファイルを新規作成し、以下のテキストをそのままコピーして保存（コミット）してください。
+    """)
+    
+    st.code("""
+google-generativeai
+pandas
+python-docx
+PyPDF2
+python-pptx
+openpyxl
+    """, language="text")
+    
+    st.markdown("""
+    コミットが完了すると、Streamlit Cloudが自動的に変更を検知してパッケージをインストールし、本アプリが100%正常に起動するようになります。
+    """)
+    st.stop()  # ここで実行を安全に中断します
+
 
 # --- 1. APIキーの設定 (APIKEY.ini または クラウドのSecretsからハイブリッド取得) ---
 # ※既存のAPI取得ロジックの構造・変数名を1行も崩さずに、クラウド安全対策を内包させています
@@ -46,7 +93,6 @@ def load_api_key():
             pass
             
     # 2. もしローカルにファイルがなければ、Streamlit Cloudの「Secrets」から安全に取得する
-    # ※KeyErrorやAttributeErrorによる即死を確実に防ぐための超堅牢化パース
     try:
         if hasattr(st, "secrets") and st.secrets is not None:
             if "GEMINI" in st.secrets:
@@ -103,6 +149,8 @@ def extract_from_pptx(file):
         return f"[PowerPoint読込エラー] {str(e)}"
 
 def extract_from_excel(file):
+    if pd is None:
+        return "[システム警告] pandas がロードされていません。"
     try:
         file.seek(0)
         all_sheets = pd.read_excel(file, sheet_name=None)
@@ -114,6 +162,8 @@ def extract_from_excel(file):
         return f"[Excel読込エラー] {str(e)}\n※xlsxファイル読込には openpyxl パッケージが必要です。"
 
 def extract_from_csv(file):
+    if pd is None:
+        return "[システム警告] pandas がロードされていません。"
     try:
         file.seek(0)
         df = pd.read_csv(file)
@@ -139,6 +189,8 @@ def extract_from_text(file):
 
 # --- 404エラーを回避しつつ、利用可能なモデル名を安全に取得する関数 ---
 def get_safe_model_name(api_key):
+    if genai is None:
+        return 'gemini-1.5-flash'
     try:
         genai.configure(api_key=api_key)
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
@@ -153,6 +205,9 @@ def get_safe_model_name(api_key):
 
 # --- 3. AI回答生成ロジック (自動リトライ・履歴ウィンドウ削減版) ---
 def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_key):
+    if genai is None or exceptions is None:
+        return "【システムエラー】Google Gemini APIライブラリ(google-generativeai)が正常にロードされていません。requirements.txtに追加されているか確認してください。"
+
     target_model = get_safe_model_name(api_key)
     
     # トークン爆発を防ぐため、AIに送る「過去の履歴」を最新の6発言（3往復）に限定
@@ -227,8 +282,6 @@ def safe_rerun():
             pass  # rerunがどちらも提供されていない超旧バージョンでは自然な状態遷移に委ねます
 
 # --- 4. 画面構築 (Streamlit UI) ---
-st.set_page_config(page_title="預かり資産トータルクエリーサービス AIFAQ", layout="wide")
-
 # チャットUI(st.chat_input, st.chat_message)がインストールされたStreamlit環境でサポートされているかを検証
 has_chat_ui = hasattr(st, "chat_input") and hasattr(st, "chat_message")
 
@@ -330,10 +383,10 @@ st.sidebar.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# インポートエラー検知時の自己申告メッセージ
+# インポートエラー検知時の自己申告メッセージ (必須以外のオプショナルライブラリ)
 if import_errors:
     st.sidebar.warning(
-        f"⚠️ 以下の必須パッケージがデプロイ環境にインストールされていません。マニュアル読み込み時の一部形式が制限されます。解決するには `requirements.txt` へ追記してください。\n"
+        f"⚠️ 以下の補助パッケージがデプロイ環境にインストールされていません。マニュアル読み込み時の一部形式が制限されます。解決するには `requirements.txt` へ追記してください。\n"
         f"不足パッケージ: {', '.join(import_errors)}"
     )
 
@@ -436,7 +489,10 @@ if st.session_state.format_file_names:
 st.sidebar.markdown("---")
 if st.sidebar.button("🛑 アプリを終了する"):
     st.sidebar.warning("システムを終了します。")
-    os.kill(os.getpid(), signal.SIGINT)
+    try:
+        os.kill(os.getpid(), signal.SIGINT)
+    except Exception as e:
+        st.sidebar.error(f"終了処理に失敗しました: {e}")
 
 # --- 7. セッション状態の初期化 ---
 if "messages" not in st.session_state:
@@ -469,13 +525,14 @@ with chat_placeholder:
         """, unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ユーザー入力プロンプトの判定用変数
+# ユーザー入力プロンプトの判定用変数 (Python 旧バージョンのウォルラス演算子互換性対策)
 prompt = None
 
 # Streamlitのバージョンに応じてチャット入力方法を自動分岐
 if has_chat_ui:
-    # 新しいStreamlitバージョンでのチャットUI
-    if user_input := st.chat_input("クエリーサービスの質問内容を入力してください（例：スケジュール実行の方法は？等）"):
+    # 新しいStreamlitバージョンでのチャットUI (ウォルラス演算子を使用しない安全設計)
+    user_input = st.chat_input("クエリーサービスの質問内容を入力してください（例：スケジュール実行の方法は？等）")
+    if user_input:
         prompt = user_input
 else:
     # 旧型のStreamlitバージョンでの代替フォームUI（これで起動エラーが100%回避されます）
