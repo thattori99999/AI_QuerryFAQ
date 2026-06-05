@@ -1,9 +1,21 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 
-# --- 1. ページタイトルを動的に変更するためのセッション状態の初期化 ---
+# --- 1. ユニバーサル文字サイズ・タイトル等のセッション状態の初期化 ---
+if "font_size_class" not in st.session_state:
+    st.session_state.font_size_class = "normal"  # "normal", "large", "extra"
 if "app_title" not in st.session_state:
-    st.session_state.app_title = "🤖 汎用 AIFAQシステム"
+    st.session_state.app_title = "FundMonitor BI"
+if "current_welcome_msg" not in st.session_state:
+    st.session_state.current_welcome_msg = (
+        "はじめまして！「FundMonitor BI お助けAI」です。😊\n\n"
+        "当ツールの利用マニュアルと活用マニュアルのすべてを記憶していますよ。\n"
+        "導入方法、AWSの接続手順、データ更新方法、グラフ作成やExcel連動、出力方法など、何でも分かりやすくお答えします！"
+    )
+
+# 質問自動入力用
+if "faq_trigger" not in st.session_state:
+    st.session_state.faq_trigger = None
 
 # --- 【最優先ルール】Streamlitのページ構成設定は、他のあらゆるコマンドより先に最上部で実行します ---
 st.set_page_config(page_title=st.session_state.app_title, layout="wide")
@@ -23,7 +35,6 @@ import time  # リトライ待機（スリープ）処理のため
 
 # --- 2. APIキーの設定 (APIKEY.ini または クラウドのSecretsからハイブリッド取得) ---
 def load_api_key():
-    # 1. まずローカルの APIKEY.ini を探す
     config = configparser.ConfigParser()
     file_path = 'APIKEY.ini'
     if os.path.exists(file_path):
@@ -33,7 +44,6 @@ def load_api_key():
         except:
             pass
             
-    # 2. もしローカルにファイルがなければ、Streamlit Cloudの「Secrets」から安全に取得する
     try:
         if "GEMINI" in st.secrets and "API_KEY" in st.secrets["GEMINI"]:
             return st.secrets["GEMINI"]["API_KEY"]
@@ -52,11 +62,8 @@ EMBEDDED_API_KEY = INI_KEY
 def extract_from_docx(file):
     file.seek(0)
     doc = Document(file)
-    
-    # 段落テキストの抽出
     paragraphs_text = "\n".join([para.text for para in doc.paragraphs])
     
-    # テーブル（表データ）の抽出を追加
     tables_text = []
     for t_idx, table in enumerate(doc.tables):
         tables_text.append(f"\n\n[資料内テーブル #{t_idx+1}]")
@@ -215,13 +222,13 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
 【預かり資産トータルクエリーサービスに関する絶対判定ルール】
 もしアップロードされた資料の内容や質問の文脈が「預かり資産トータルクエリーサービス」に関連する場合、ユーザーのやりたいデータ抽出や操作要望に対して、以下の思考プロセスを厳格に適用して回答を構成してください。
 1. **「標準クエリ（約200種類）の確認」**: まず第一に、ユーザーのやりたい要件にそのまま合致する既存の標準クエリがすでに提供されているかをマニュアル内のクエリ一覧テーブル等から判断して案内してください。
-2. **「既存クエリの修正・加工方法」**: もし完全に合致する既存の標準クエリがそのままでは見つからない場合、どの標準クエリをベース（ひな形）に選択し、それをように修正（項目追加、結合、フィルター条件の編集など）すれば目的の結果が得られるかを、具体的かつ分かりやすい手順として説明してください。
+2. **「既存クエリの修正・加工方法」**: もし完全に合致する既存の標準クエリがそのままでは見つからない場合、どの標準クエリをベース（ひな形）に選択し、それをどのように修正（項目追加、結合、フィルター条件の編集など）すれば目的の結果が得られるかを、具体的かつ分かりやすい手順として説明してください。
 
 【回答の絶対ルール】
 1. ユーザーの質問に対し、アップロードされたマニュアルの情報を最も信頼できる「絶対の基準（最優先情報）」として参照し、正確に回答を構成してください。
 2. アップロードされた情報だけで判断がつかない不確実な事項やマニュアルに記載がない操作については、知ったかぶりをせず、「マニュアル等に記載がありませんでした」と明示したうえで、一般的な推奨方法を補足するか、専門の窓口や管理者への確認を案内してください。
 3. 専門用語が使われている場合でも、操作担当者がスムーズに迷わず作業を進められるよう、ステップ・バイ・ステップの具体的な手順や丁寧な表現で回答してください。
-4. AIとしてのメタな発言（例：「以上がアップロードされたマニュアルに基づく回答です」など）は含めず、ユーザーへの親切な回答テキストのみを親みやすいLINE風の対話形式で出力してください。
+4. AIとしてのメタな発言（例：「以上がマニュアルに基づく回答です」など）は含めず、ユーザーへの親切な回答テキストのみを親みやすいLINE風の対話形式で出力してください。
 
 【これまでの会話履歴】
 {history_text}
@@ -259,344 +266,417 @@ def main_app():
         st.warning("🛑 システムは終了しました。再度ご利用になる場合は、ブラウザをリロード（再読み込み）してください。")
         st.stop()
 
-    # すべてのインライン干渉を完全に防ぐ、ユニバーサルデザイン用の一括CSS設計（改行干渉を徹底排除）
-    st.markdown("""<style>
-.stApp {
-background-color: #FAFCEE !important;
+    # 文字サイズ設定に応じた動的文字px値の決定
+    if st.session_state.font_size_class == "large":
+        base_font_px = "21px"
+        bubble_font_px = "21px"
+        header_font_px = "19px"
+    elif st.session_state.font_size_class == "extra":
+        base_font_px = "24px"
+        bubble_font_px = "24px"
+        header_font_px = "22px"
+    else:
+        base_font_px = "17px"
+        bubble_font_px = "17px"
+        header_font_px = "15px"
+
+    # --- 🎨 image_b6fc39.png の配色・丸み・影・枠線をCSSで完全再現 ---
+    st.markdown(f"""<style>
+/* アプリケーション全体背景 (クリーンなニュアンスグレー) */
+.stApp {{
+background-color: #f4f6f3 !important;
 font-family: "BIZ UDゴシック", "BIZ UDPゴシック", "Helvetica Neue", Arial, sans-serif !important;
-font-size: 18px !important;
+font-size: {base_font_px} !important;
 line-height: 1.6 !important;
-color: #1A331E !important;
-}
-section[data-testid="stSidebar"] {
-background-color: #E8F5E9 !important;
-border-right: 3px solid #A5D6A7;
-font-size: 16px !important;
-}
-label, p, li, span {
-font-size: 18px !important;
-font-weight: 500 !important;
-}
-div.stButton > button {
-background-color: #2E7D32 !important;
+color: #2d3748 !important;
+}}
+
+/* 画面右上の文字サイズ切替エリアの調整 */
+.font-selector-container {{
+display: flex;
+align-items: center;
+justify-content: flex-end;
+gap: 10px;
+color: white;
+font-size: 15px;
+font-weight: bold;
+}}
+
+/* 各種フォーム・アップローダー・サイドカードの装飾 */
+div[data-testid="stExpander"], .css-1r6g8gg, .stForm {{
+background-color: #ffffff !important;
+border: 1px solid #e2e8f0 !important;
+border-radius: 12px !important;
+box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05) !important;
+padding: 20px !important;
+}}
+
+/* モモアバター＆吹き出し風チャットボックスの再現 */
+.chat-container {{
+display: flex;
+flex-direction: column;
+gap: 16px;
+width: 100%;
+margin-bottom: 20px;
+}}
+.chat-row-user {{
+display: flex;
+justify-content: flex-end;
+width: 100%;
+}}
+.chat-row-assistant {{
+display: flex;
+justify-content: flex-start;
+width: 100%;
+}}
+.chat-bubble-user {{
+background-color: #f7f9f6;
+color: #2d3748;
+padding: 18px 24px;
+border-radius: 20px 20px 0px 20px;
+max-width: 82%;
+border: 1px solid #e2e8f0;
+font-size: {bubble_font_px} !important;
+line-height: 1.6;
+box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}}
+.chat-bubble-assistant {{
+background-color: #ffffff;
+color: #2d3748;
+padding: 18px 24px;
+border-radius: 20px 20px 20px 0px;
+max-width: 82%;
+border: 1px solid #e2e8f0;
+font-size: {bubble_font_px} !important;
+line-height: 1.6;
+box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}}
+
+/* アバター用アプローチ */
+.avatar-circle-ai {{
+width: 44px;
+height: 44px;
+border-radius: 50%;
+background-color: #3b5e43;
+color: white;
+display: flex;
+align-items: center;
+justify-content: center;
+font-weight: bold;
+font-size: 16px;
+}}
+
+/* 送信ボタンのテラコッタオレンジ（#d97d5a）完全再現 */
+div.stButton > button {{
+background-color: #d97d5a !important;
 color: white !important;
-border-radius: 25px !important;
-border: 2px solid #1B5E20 !important;
+border-radius: 12px !important;
+border: none !important;
 padding: 0.8rem 2.2rem !important;
 font-size: 18px !important;
 font-weight: bold !important;
 transition: all 0.2s;
-box-shadow: 0px 4px 6px rgba(0,0,0,0.15);
-}
-div.stButton > button:hover {
-background-color: #1B5E20 !important;
-box-shadow: 0 6px 12px rgba(0,0,0,0.25);
-transform: translateY(-1px);
-}
-.chat-container {
-display: flex;
-flex-direction: column;
-gap: 20px;
-margin-bottom: 30px;
-width: 100%;
-}
-.chat-row-user {
-display: flex;
-justify-content: flex-end;
-width: 100%;
-}
-.chat-row-assistant {
-display: flex;
-justify-content: flex-start;
-width: 100%;
-}
-.chat-bubble-user {
-background-color: #66BB6A;
-color: #052207;
-padding: 16px 22px;
-border-radius: 22px 22px 0px 22px;
-max-width: 80%;
-box-shadow: 0px 3px 6px rgba(0,0,0,0.1);
-font-size: 18px !important;
-line-height: 1.6;
-text-align: left;
-border: 1px solid #4CAF50;
-}
-.chat-bubble-assistant {
-background-color: #FFFFFF;
-color: #1B5E20;
-padding: 16px 22px;
-border-radius: 22px 22px 22px 0px;
-max-width: 80%;
-box-shadow: 0px 3px 6px rgba(0,0,0,0.1);
-border: 2px solid #81C784;
-font-size: 18px !important;
-line-height: 1.6;
-text-align: left;
-}
-.chat-header {
-font-weight: 800 !important;
-font-size: 18px !important;
-margin-bottom: 12px;
-opacity: 0.95;
-display: flex;
-align-items: center;
-gap: 10px;
-color: #111111;
-}
-.chat-icon {
-font-size: 36px !important;
-display: inline-block;
-vertical-align: middle;
-line-height: 1;
-}
-textarea {
-font-size: 18px !important;
-line-height: 1.5 !important;
-}
+box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}}
+div.stButton > button:hover {{
+background-color: #c86e4b !important;
+box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+}}
 
-/* 🌟 StreamlitのMarkdown干渉を完璧にバイパスして表示させるための特製クラス指定 */
-.custom-title-card {
-background-color: #1B5E20 !important;
-padding: 40px 30px !important;
-border-radius: 18px !important;
-text-align: center !important;
-margin-bottom: 30px !important;
-box-shadow: 0px 6px 16px rgba(0,0,0,0.18) !important;
-border: 3px solid #81C784 !important;
-width: 100% !important;
-box-sizing: border-box !important;
-}
-.custom-title-text {
-color: #FFFFFF !important;
-margin: 0 !important;
-padding: 0 !important;
-font-size: 42px !important;
+/* クイックFAQボタンのスタイル調整 */
+.faq-btn-card {{
+background-color: #f7f9f6 !important;
+border: 1px solid #e2e8f0 !important;
+border-radius: 8px !important;
+padding: 12px 16px !important;
+margin-bottom: 8px !important;
+cursor: pointer !important;
+display: flex !important;
+justify-content: space-between !important;
+align-items: center !important;
+font-size: 15px !important;
 font-weight: bold !important;
-line-height: 1.3 !important;
-word-break: break-word !important;
-font-family: 'BIZ UDゴシック', sans-serif !important;
-}
-.custom-title-sub {
-color: #E8F5E9 !important;
-margin: 15px 0 0 0 !important;
-padding: 0 !important;
-font-size: 20px !important;
-font-weight: bold !important;
-opacity: 0.95 !important;
-letter-spacing: 0.5px !important;
-line-height: 1.4 !important;
-font-family: 'BIZ UDゴシック', sans-serif !important;
-}
+color: #3b5e43 !important;
+transition: background-color 0.2s;
+}}
+.faq-btn-card:hover {{
+background-color: #edf2ed !important;
+}}
 </style>""", unsafe_allow_html=True)
 
+    # --- 🌟 image_b6fc39.png のモスグリーン（#3b5e43）ヘッダー & 文字サイズ切替 ---
+    header_col1, header_col2 = st.columns([7, 3])
+    with header_col1:
+        st.markdown(f"""
+        <div style="background-color: #3b5e43; padding: 18px 24px; border-radius: 12px 12px 0 0; display: flex; align-items: center; gap: 15px; margin-bottom: -15px;">
+            <div style="background-color: white; border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 24px;">💡</div>
+            <div>
+                <div style="color: white; font-size: 26px; font-weight: bold; line-height: 1.1;">{st.session_state.app_title}</div>
+                <div style="color: #cbdad0; font-size: 14px; margin-top: 2px;">公式マニュアル・お助けAIチャット</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with header_col2:
+        st.markdown("""<div style="background-color: #3b5e43; padding: 22px 24px; border-radius: 12px 12px 0 0; display: flex; align-items: center; justify-content: flex-end; margin-bottom: -15px; height: 100%;">
+<div class="font-selector-container">文字の大きさ：</div>
+</div>""", unsafe_allow_html=True)
+        # ヘッダーに綺麗にトグルを合わせるための配置
+        size_cols = st.columns([1, 1, 1])
+        with size_cols[0]:
+            if st.button("ふつう", key="btn_f_norm", use_container_width=True):
+                st.session_state.font_size_class = "normal"
+                st.rerun()
+        with size_cols[1]:
+            if st.button("大きめ", key="btn_f_lrg", use_container_width=True):
+                st.session_state.font_size_class = "large"
+                st.rerun()
+        with size_cols[2]:
+            if st.button("特大", key="btn_f_ext", use_container_width=True):
+                st.session_state.font_size_class = "extra"
+                st.rerun()
 
-    # --- 左側サイドバー情報入力メニュー ---
-    st.sidebar.markdown("""<div style="background-color: #1B5E20; padding: 14px; border-radius: 12px; margin-bottom: 18px; text-align: center; border: 2px solid #A5D6A7;">
-<h3 style="color: white; margin: 0; font-size: 18px; font-weight: bold;">📁 コントロールパネル</h3>
+    st.write("") # スペーサー
+
+    # 左右スプリットレイアウト (左3: 右7)
+    left_col, right_col = st.columns([3, 7])
+
+    # --- 左側パネル（API設定、マニュアルアップローダー、出力サンプル、クイックFAQ） ---
+    with left_col:
+        # 1. AIキー設定カード
+        st.markdown('<div style="font-weight: bold; margin-bottom: 8px;">🔑 AIキー設定（お持ちの場合のみ）</div>', unsafe_allow_html=True)
+        with st.container():
+            custom_api_key = st.text_input(
+                "Gemini APIキーを入力",
+                type="password",
+                placeholder="入力すると優先して使われます",
+                label_visibility="collapsed"
+            )
+            st.markdown("<small style='color: #718096;'>※空欄の場合は、システム既定のキーで自動的に動くので安心してください。</small>", unsafe_allow_html=True)
+            
+            # 優先キーの決定
+            ACTIVE_API_KEY = custom_api_key if custom_api_key else EMBEDDED_API_KEY
+            if ACTIVE_API_KEY:
+                st.info("✔️ APIキーが有効に作動しています")
+            else:
+                st.warning("⚠️ APIキーを設定してください")
+
+        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+
+        # 2. マニュアル資料読込カード
+        st.markdown('<div style="font-weight: bold; margin-bottom: 8px;">📁 手元の資料をAIに読み込ませる</div>', unsafe_allow_html=True)
+        with st.container():
+            uploaded_files = st.file_uploader(
+                "資料 (Excel, PDF, Word, CSV, PPT)",
+                type=["docx", "pdf", "pptx", "xlsx", "xls", "csv"],
+                accept_multiple_files=True,
+                label_visibility="collapsed"
+            )
+            
+            all_extra_text = []
+            file_names = []
+            if uploaded_files:
+                for f in uploaded_files:
+                    try:
+                        if f.name.endswith(".docx"): content = extract_from_docx(f)
+                        elif f.name.endswith(".pdf"): content = extract_from_pdf(f)
+                        elif f.name.endswith(".pptx"): content = extract_from_pptx(f)
+                        elif f.name.endswith((".xlsx", ".xls")): content = extract_from_excel(f)
+                        elif f.name.endswith(".csv"): content = extract_from_csv(f)
+                        else: content = ""
+                        
+                        if content:
+                            all_extra_text.append(f"--- ファイル名: {f.name} ---\n{content}")
+                            file_names.append(f.name)
+                            st.success(f"✔️ {f.name} を学習完了")
+                    except Exception as e:
+                        st.error(f"❌ {f.name} 読み込み失敗: {str(e)}")
+
+        # マニュアルに基づくダイナミックなタイトル＆ペルソナ変更
+        if file_names:
+            if "last_processed_files" not in st.session_state or st.session_state.last_processed_files != file_names:
+                default_service_name = clean_service_name(file_names[0])
+                if ACTIVE_API_KEY and all_extra_text:
+                    joined_samples = "\n".join(all_extra_text)
+                    detected_name = extract_service_name_via_ai(joined_samples, default_service_name, ACTIVE_API_KEY)
+                    st.session_state.app_title = detected_name
+                    st.session_state.current_welcome_msg = (
+                        f"はじめまして！「{detected_name} お助けAI」です。😊\n\n"
+                        f"アップロードされた資料【{', '.join(file_names)}】をすべて記憶して完全学習しました！\n"
+                        f"具体的な操作手順、設定、活用方法など、何でも分かりやすくお答えします！"
+                    )
+                else:
+                    st.session_state.app_title = default_service_name
+                st.session_state.last_processed_files = file_names
+                st.rerun()
+
+            current_persona = {
+                "description": f"提供されたマニュアル「{', '.join(file_names)}」（対象システム/ツール: {st.session_state.app_title}）に精通した、専属の優秀なAIFAQ操作説明アシスタントです。"
+            }
+        else:
+            st.session_state.app_title = "FundMonitor BI"
+            current_persona = {
+                "description": "現在はFundMonitor BIマニュアルについて説明するお助けAIチャットです。導入方法、AWSの接続手順、データ更新方法、グラフ作成やExcel連動、出力方法について正確に回答します。"
+            }
+
+        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+
+        # 3. 出力フォーマットサンプル読込カード
+        st.markdown('<div style="font-weight: bold; margin-bottom: 8px;">📋 出力サンプルの読込</div>', unsafe_allow_html=True)
+        with st.container():
+            if "format_samples" not in st.session_state:
+                st.session_state.format_samples = []
+            if "format_file_names" not in st.session_state:
+                st.session_state.format_file_names = []
+
+            uploaded_format = st.file_uploader(
+                "出力サンプル (Word, PDF, Excel, CSV, PPT, TXT)",
+                type=["docx", "pdf", "pptx", "xlsx", "xls", "csv", "txt"],
+                key="format_uploader"
+            )
+
+            if uploaded_format:
+                f_name = uploaded_format.name
+                if f_name not in st.session_state.format_file_names:
+                    try:
+                        if f_name.endswith(".docx"): content = extract_from_docx(uploaded_format)
+                        elif f_name.endswith(".pdf"): content = extract_from_pdf(uploaded_format)
+                        elif f_name.endswith(".pptx"): content = extract_from_pptx(uploaded_format)
+                        elif f_name.endswith((".xlsx", ".xls")): content = extract_from_excel(uploaded_format)
+                        elif f_name.endswith(".csv"): content = extract_from_csv(uploaded_format)
+                        elif f_name.endswith(".txt"): content = extract_from_text(uploaded_format)
+                        else: content = ""
+                        
+                        if content:
+                            st.session_state.format_samples.append(f"--- サンプルファイル名: {f_name} ---\n{content}")
+                            st.session_state.format_file_names.append(f_name)
+                            st.success(f"✔️ サンプル「{f_name}」学習完了")
+                    except Exception as e:
+                        st.error(f"❌ {f_name} の読込失敗: {str(e)}")
+
+            if st.session_state.format_file_names:
+                st.write("📌 ロード中:")
+                for name in st.session_state.format_file_names:
+                    st.write(f"・ {name}")
+                if st.button("🗑️ サンプルをクリア", use_container_width=True):
+                    st.session_state.format_samples = []
+                    st.session_state.format_file_names = []
+                    st.success("クリアしました。")
+                    safe_rerun()
+
+        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+
+        # 4. 「よくあるお困りごと」クイックトリガーボタン
+        st.markdown('<div style="font-weight: bold; margin-bottom: 8px;">❓ よくあるお困りごと</div>', unsafe_allow_html=True)
+        faqs = [
+            ("インスト", "📥 Power BIのインストール方法"),
+            ("接続", "☁️ AWS (Athena) への接続方法"),
+            ("更新", "🔄 データを最新に更新する手順"),
+            ("自作", "📊 自作Excelリスト(C:/fdmo)との連携"),
+            ("保存", "💾 Excel用データ(CSV)保存の手順")
+        ]
+        for key_f, label_f in faqs:
+            # クリックしたらセッションステートに代入して再起動
+            if st.button(label_f, key=f"faq_{key_f}", use_container_width=True):
+                # マークダウンマークや装飾文字を取り除いた質問テキスト
+                st.session_state.faq_trigger = label_f[2:]
+                st.rerun()
+
+    # --- 右側パネル（ステータス、チャットスレッド、入力欄） ---
+    with right_col:
+        # AIステータスバー & 音声ボタン（モック）の配置
+        status_col1, status_col2 = st.columns([8, 2])
+        with status_col1:
+            st.markdown(f"""
+            <div style="background-color: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 20px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <div class="avatar-circle-ai">AI</div>
+                <div>
+                    <div style="font-weight: bold; font-size: 16px; color: #2d3748;">{st.session_state.app_title} サポートAI</div>
+                    <div style="color: #48bb78; font-size: 12px; font-weight: bold;">● いつでも質問に答えますよ</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        with status_col2:
+            st.markdown("""<div style="height:100%; display:flex; align-items:center; justify-content:center;">
+<button style="border:1px solid #e2e8f0; background:white; border-radius:12px; padding:12px; width:100%; font-weight:bold; cursor:pointer; font-size:14px; color:#a0aec0;">🔇 音声: 停止中</button>
 </div>""", unsafe_allow_html=True)
 
-    st.sidebar.subheader("🔑 APIキーの設定")
-    custom_api_key = st.sidebar.text_input(
-        "Gemini APIキーを入力 (任意)",
-        type="password",
-        help="入力した場合、このAPIキーを優先して使用します。未入力時はシステムのデフォルトAPIキーを利用します。"
-    )
+        st.write("")
 
-    # APIキーの優先度選択
-    ACTIVE_API_KEY = custom_api_key if custom_api_key else EMBEDDED_API_KEY
+        # 履歴セッションの初期化
+        if "messages" not in st.session_state:
+            st.session_state.messages = [{
+                "role": "assistant",
+                "content": st.session_state.current_welcome_msg
+            }]
 
-    if not ACTIVE_API_KEY:
-        st.sidebar.error("⚠️ APIキーが設定されていません。サイドバーから入力するか、設定ファイルを確認してください。")
-    else:
-        if custom_api_key:
-            st.sidebar.success("✔️ カスタムAPIキーを適用中")
-        else:
-            st.sidebar.info("✔️ デフォルトAPIキーを使用中")
-
-    st.sidebar.markdown("---")
-
-    # 1. 情報入力用マニュアルファイル
-    st.sidebar.subheader("📄 マニュアル資料の読込")
-    uploaded_files = st.sidebar.file_uploader(
-        "資料 (Excel, Word, PDF, CSV, PPT)", 
-        type=["docx", "pdf", "pptx", "xlsx", "xls", "csv"], 
-        accept_multiple_files=True,
-        key="file_uploader"
-    )
-
-    # --- タイトルとキャラクター情報の動的書き換えロジック ---
-    all_extra_text = []
-    file_names = []
-    
-    if uploaded_files:
-        for f in uploaded_files:
-            try:
-                if f.name.endswith(".docx"): content = extract_from_docx(f)
-                elif f.name.endswith(".pdf"): content = extract_from_pdf(f)
-                elif f.name.endswith(".pptx"): content = extract_from_pptx(f)
-                elif f.name.endswith((".xlsx", ".xls")): content = extract_from_excel(f)
-                elif f.name.endswith(".csv"): content = extract_from_csv(f)
-                else: content = ""
-                
-                if content:
-                    all_extra_text.append(f"--- ファイル名: {f.name} ---\n{content}")
-                    file_names.append(f.name)
-                    st.sidebar.write(f"✔️ 資料読込済: {f.name}")
-            except Exception as e:
-                st.sidebar.error(f"❌ {f.name} の読込失敗: {str(e)}")
-
-    # 読み込まれたマニュアルに基づいてタイトルを賢く自動抽出・変更
-    if file_names:
-        if "last_processed_files" not in st.session_state or st.session_state.last_processed_files != file_names:
-            default_service_name = clean_service_name(file_names[0])
-            if ACTIVE_API_KEY and all_extra_text:
-                joined_samples = "\n".join(all_extra_text)
-                detected_name = extract_service_name_via_ai(joined_samples, default_service_name, ACTIVE_API_KEY)
-                st.session_state.detected_service_name = detected_name
-            else:
-                st.session_state.detected_service_name = default_service_name
-                
-            st.session_state.last_processed_files = file_names
-            
-        st.session_state.app_title = f"📖 {st.session_state.detected_service_name} 操作説明 AIFAQ"
-        current_persona = {
-            "description": f"提供されたマニュアル「{', '.join(file_names)}」（対象システム/ツール: {st.session_state.detected_service_name}）に精通した、専属の優秀なAIFAQ操作説明アシスタントです。"
-        }
-    else:
-        st.session_state.app_title = "🤖 汎用 AIFAQシステム"
-        current_persona = {
-            "description": "現在は特定のマニュアルはロードされていません。ロードされる多様なシステム・ツール資料や操作手順、一般的な疑問に対して柔軟に回答する汎用AIFAQアシスタントです。"
-        }
-
-
-    # --- 💡100%確実に表示が保証される、Streamlit非干渉クラス構造による美麗タイトルヘッダー（行頭・改行の干渉を排除） ---
-    st.markdown(f'<div class="custom-title-card"><div class="custom-title-text">{st.session_state.app_title}</div><div class="custom-title-sub">操作マニュアルを賢く学習し、図表や設定テーブルの参照箇所を特定しながら、疑問を分かりやすく解決します。</div></div>', unsafe_allow_html=True)
-
-
-    st.sidebar.markdown("---")
-
-    # 2. 出力フォーマットサンプル読込
-    st.sidebar.subheader("📋 出力フォーマットサンプルの読込")
-    st.sidebar.markdown("<small>出力したいサンプルの形式を取り込み、出力手順を確認できます</small>", unsafe_allow_html=True)
-
-    if "format_samples" not in st.session_state:
-        st.session_state.format_samples = []
-    if "format_file_names" not in st.session_state:
-        st.session_state.format_file_names = []
-
-    uploaded_format = st.sidebar.file_uploader(
-        "出力サンプル (Excel, Word, PDF, CSV, PPT, TXT)", 
-        type=["docx", "pdf", "pptx", "xlsx", "xls", "csv", "txt"],
-        key="format_uploader"
-    )
-
-    if uploaded_format:
-        f_name = uploaded_format.name
-        if f_name not in st.session_state.format_file_names:
-            try:
-                if f_name.endswith(".docx"): content = extract_from_docx(uploaded_format)
-                elif f_name.endswith(".pdf"): content = extract_from_pdf(uploaded_format)
-                elif f_name.endswith(".pptx"): content = extract_from_pptx(uploaded_format)
-                elif f_name.endswith((".xlsx", ".xls")): content = extract_from_excel(uploaded_format)
-                elif f_name.endswith(".csv"): content = extract_from_csv(uploaded_format)
-                elif f_name.endswith(".txt"): content = extract_from_text(uploaded_format)
-                else: content = ""
-                
-                if content:
-                    st.session_state.format_samples.append(f"--- サンプルファイル名: {f_name} ---\n{content}")
-                    st.session_state.format_file_names.append(f_name)
-            except Exception as e:
-                st.sidebar.error(f"❌ {f_name} の読込失敗: {str(e)}")
-
-    if st.session_state.format_file_names:
-        st.sidebar.write("📌 現在取り込まれているサンプル:")
-        for name in st.session_state.format_file_names:
-            st.sidebar.write(f"・ {name}")
-        
-        # クリア機能
-        if st.sidebar.button("🗑️ 出力フォーマットサンプルをクリア"):
-            st.session_state.format_samples = []
-            st.session_state.format_file_names = []
-            st.sidebar.success("サンプルファイルをクリアしました。")
-            safe_rerun()
-
-    st.sidebar.markdown("---")
-    
-    if st.sidebar.button("🛑 アプリを終了する"):
-        st.session_state.app_terminated = True
-        st.sidebar.warning("システムを終了しました。")
-        safe_rerun()
-
-
-    # --- 6. セッション状態の初期化 ---
-    if "messages" not in st.session_state:
-        st.session_state.messages = [{
-            "role": "assistant", 
-            "content": "汎用 AIFAQチャットシステムへようこそ！お手元の操作マニュアルや資料（Word, PDF, Excel, CSV, PPT等）を左側のメニューからアップロードしていただければ、即座にその内容を学習した専用の回答アシスタントとしてお答えいたします。\n\n本システムは図表（テーブル）の分析機能を強化しており、案内手順の根拠となったマニュアル内の表を特定してお答えします。\nまた、「再現したい成果物の出力サンプル」をアップロードしていただくことで、それをマニュアルに沿って作成する手順も詳しくお調べします。"
-        }]
-
-    if st.session_state.format_file_names:
-        st.info(f"💡 出力フォーマットサンプル（{', '.join(st.session_state.format_file_names)}）が読み込まれています。チャットで「このサンプルを出力するには？」等と質問してみてください。")
-    elif file_names:
-        st.info(f"💡 現在、マニュアル資料（{', '.join(file_names)}）が読み込まれています。学習したシステム・ツール情報、及びマニュアル内の設定テーブルに基づいて適確に案内いたします！")
-    else:
-        st.info(f"💡 マニュアル資料を学習させたい場合は、左側のサイドバーからファイルをアップロードしてください。現在アップロードされたマニュアルはありません。")
-
-    # チャット履歴をLINE風に描画
-    chat_placeholder = st.container()
-
-    with chat_placeholder:
-        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-        for m in st.session_state.messages:
-            row_class = "chat-row-assistant" if m["role"] == "assistant" else "chat-row-user"
-            bubble_class = "chat-bubble-assistant" if m["role"] == "assistant" else "chat-bubble-user"
-            
-            # 発言者に合わせた絵文字と大きなアイコンのHTML（「あなた」に明確に変更）
-            if m["role"] == "assistant":
-                avatar_html = '<span class="chat-icon">🤖</span> AIアシスタント'
-            else:
-                avatar_html = '<span class="chat-icon">💼</span> あなた（入力者）'
-            
-            st.markdown(f"""
-            <div class="{row_class}">
-                <div class="{bubble_class}">
-                    <div class="chat-header">{avatar_html}</div>
-                    <div>{m["content"]}</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-
-    # ユーザー入力を受付
-    if prompt := st.chat_input("マニュアルに関する質問や操作方法の疑問を入力してください..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        
-        # ユーザーの発言を即時描画（特大アイコン仕様）
+        # チャットログのレンダリング
+        chat_placeholder = st.container()
         with chat_placeholder:
-            st.markdown(f"""
-            <div class="chat-row-user">
-                <div class="chat-bubble-user">
-                    <div class="chat-header"><span class="chat-icon">💼</span> あなた（入力者）</div>
-                    <div>{prompt}</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with st.chat_message("assistant", avatar="🤖"):
-            with st.spinner("該当する情報を確認して回答を作成中..."):
-                res = get_ai_roleplay_response(
-                    st.session_state.messages, 
-                    current_persona, 
-                    all_extra_text, 
-                    st.session_state.format_samples,
-                    ACTIVE_API_KEY
-                )
-                st.markdown(res)
-            
-        st.session_state.messages.append({"role": "assistant", "content": res})
-        safe_rerun()
+            st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+            for m in st.session_state.messages:
+                row_class = "chat-row-assistant" if m["role"] == "assistant" else "chat-row-user"
+                bubble_class = "chat-bubble-assistant" if m["role"] == "assistant" else "chat-bubble-user"
+                
+                if m["role"] == "assistant":
+                    header_html = f'<div class="chat-header"><div class="avatar-circle-ai" style="width:28px; height:28px; font-size:11px;">AI</div><span style="font-weight:bold;">サポートAI</span></div>'
+                else:
+                    header_html = f'<div class="chat-header"><span style="font-size:20px;">💼</span><span style="font-weight:bold;">あなた（入力者）</span></div>'
 
-# --- メインロジックを実行 ---
+                st.markdown(f"""
+                <div class="{row_class}">
+                    <div class="{bubble_class}">
+                        {header_html}
+                        <div style="margin-top: 8px;">{m["content"]}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # チャット入力
+        prompt = None
+
+        # FAQトリガーによる自動入力
+        if st.session_state.faq_trigger:
+            prompt = st.session_state.faq_trigger
+            st.session_state.faq_trigger = None # リセット
+
+        # ユーザー手動入力
+        if user_prompt := st.chat_input("ここに知りたいことを入力してください（例：AWSエラーが出る など）"):
+            prompt = user_prompt
+
+        # 送信実行時
+        if prompt:
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            
+            with chat_placeholder:
+                st.markdown(f"""
+                <div class="chat-row-user">
+                    <div class="chat-bubble-user">
+                        <div class="chat-header"><span style="font-size:20px;">💼</span><span style="font-weight:bold;">あなた（入力者）</span></div>
+                        <div style="margin-top: 8px;">{prompt}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            with st.chat_message("assistant", avatar="🤖"):
+                with st.spinner("情報をマニュアルから参照して回答を作成中..."):
+                    res = get_ai_roleplay_response(
+                        st.session_state.messages,
+                        current_persona,
+                        all_extra_text,
+                        st.session_state.format_samples,
+                        ACTIVE_API_KEY
+                    )
+                    st.markdown(res)
+                
+            st.session_state.messages.append({"role": "assistant", "content": res})
+            st.rerun()
+
+# --- アプリケーションの終了用ボタン ---
+if st.sidebar.button("🛑 システムを終了する", key="btn_sys_term"):
+    st.session_state.app_terminated = True
+    st.rerun()
+
+# アプリを実行
 main_app()
