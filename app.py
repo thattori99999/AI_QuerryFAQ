@@ -49,11 +49,24 @@ INI_KEY = load_api_key()
 EMBEDDED_API_KEY = INI_KEY
 
 
-# --- 3. 各ファイル抽出関数 (ポインタを先頭に戻す seek(0) を追加して読み込みエラーを完全に防止) ---
+# --- 3. 各ファイル抽出関数 (ポインタを先頭に戻す seek(0) を追加し、マニュアル内のテーブル構造も合わせて抽出) ---
 def extract_from_docx(file):
     file.seek(0)
     doc = Document(file)
-    return "\n".join([para.text for para in doc.paragraphs])
+    
+    # 段落テキストの抽出
+    paragraphs_text = "\n".join([para.text for para in doc.paragraphs])
+    
+    # テーブル（表データ）の抽出を追加
+    tables_text = []
+    for t_idx, table in enumerate(doc.tables):
+        tables_text.append(f"\n\n[資料内テーブル #{t_idx+1}]")
+        for row in table.rows:
+            row_data = [cell.text.strip().replace('\n', ' ') for cell in row.cells]
+            # 簡易的なテーブル構造をテキスト化
+            tables_text.append(" | ".join(row_data))
+            
+    return paragraphs_text + "\n" + "\n".join(tables_text)
 
 def extract_from_pdf(file):
     file.seek(0)
@@ -64,10 +77,19 @@ def extract_from_pptx(file):
     file.seek(0)
     prs = Presentation(file)
     text_runs = []
-    for slide in prs.slides:
+    for s_idx, slide in enumerate(prs.slides):
+        text_runs.append(f"\n--- スライド #{s_idx+1} ---")
         for shape in slide.shapes:
-            if hasattr(shape, "text"):
+            # 一般テキスト
+            if hasattr(shape, "text") and shape.text:
                 text_runs.append(shape.text)
+            # テーブル（表データ）の抽出を追加
+            if shape.has_table:
+                table = shape.table
+                text_runs.append(f"\n[スライド内テーブル]")
+                for row in table.rows:
+                    row_data = [cell.text.strip().replace('\n', ' ') for cell in row.cells]
+                    text_runs.append(" | ".join(row_data))
     return "\n".join(text_runs)
 
 def extract_from_excel(file):
@@ -75,7 +97,7 @@ def extract_from_excel(file):
     all_sheets = pd.read_excel(file, sheet_name=None)
     text_data = []
     for sheet_name, df in all_sheets.items():
-        text_data.append(f"--- シート名: {sheet_name} ---\n{df.to_string(index=False)}")
+        text_data.append(f"--- シート名 (参照テーブル): {sheet_name} ---\n{df.to_string(index=False)}")
     return "\n".join(text_data)
 
 def extract_from_csv(file):
@@ -165,7 +187,7 @@ def extract_service_name_via_ai(text, default_name, api_key):
 def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_key):
     target_model = get_safe_model_name(api_key)
     
-    # トークン爆発を防ぐため、AIに送る「過去の履歴」を最新の6発言（3往復）に限定
+    # トークン爆張を防ぐため、AIに送る「過去の履歴」を最新の6発言（3往復）に限定
     recent_messages = [messages[0]] + messages[-5:] if len(messages) > 6 else messages
 
     for attempt in range(5):
@@ -181,7 +203,7 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
                 role_label = "AIアシスタント(あなた)" if m["role"] == "assistant" else "ユーザー"
                 history_text += f"{role_label}: {m['content']}\n"
 
-            # 汎用FAQ用のシステムプロンプト構成
+            # 汎用FAQ用のシステムプロンプト構成（テーブル参照指示を強化）
             system_prompt = f"""
 あなたはユーザーから提供されたマニュアルや資料に基づいて、操作手順や記載内容を正確に説明する熟練のAIFAQアシスタントです。
 操作方法、機能説明、データ構造、エラー解決等に関する質問に対して、丁寧かつ極めて分かりやすく回答してください。
@@ -197,9 +219,13 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
 ※この出力フォーマットサンプルが提示されている場合は、ユーザーが「これと同じデータ形式やレイアウトを出力したい」と希望しています。
 現在アップロードされている各種マニュアル・参考ドキュメントを参照し、このフォーマットを出力するにはどのような操作、設定、データの選択や加工手順を行えばいいのかを、手順を追って具体的に説明してください。
 
+【テーブル（表）の参照と特定に関する絶対ルール】
+1. **「参照テーブルの明記」**: アップロードされた資料には、操作手順や設定値が「表（テーブル形式）」で整理されている箇所が多数あります。ユーザーの質問に答える際、または手順を解説する際には、マニュアル内の **どのテーブル（例：[資料内テーブル #1]、[シート名/テーブル名]、列項目名など）を参照してその判断や数値・手順を導き出したのか** を、回答内で必ず具体的に言及・特定してください。
+2. データ項目やコード値の説明時には、「〇〇マニュアルの、表『××』に記載のある通り…」のように、ユーザーが自身でマニュアルを手繰って検証・確認できるように参照元テーブルを紐づけてください。
+
 【預かり資産トータルクエリーサービスに関する絶対判定ルール】
 もしアップロードされた資料の内容や質問の文脈が「預かり資産トータルクエリーサービス」に関連する場合、ユーザーのやりたいデータ抽出や操作要望に対して、以下の思考プロセスを厳格に適用して回答を構成してください。
-1. **「標準クエリ（約200種類）の確認」**: まず第一に、ユーザーのやりたい要件にそのまま合致する既存の標準クエリがすでに提供されているかを判断して案内してください。
+1. **「標準クエリ（約200種類）の確認」**: まず第一に、ユーザーのやりたい要件にそのまま合致する既存の標準クエリがすでに提供されているかをマニュアル内のクエリ一覧テーブル等から判断して案内してください。
 2. **「既存クエリの修正・加工方法」**: もし完全に合致する既存の標準クエリがそのままでは見つからない場合、どの標準クエリをベース（ひな形）に選択し、それをどのように修正（項目追加、結合、フィルター条件の編集など）すれば目的の結果が得られるかを、具体的かつ分かりやすい手順として説明してください。
 
 【回答の絶対ルール】
@@ -233,36 +259,61 @@ def main_app():
         st.warning("🛑 システムは終了しました。再度ご利用になる場合は、ブラウザをリロード（再読み込み）してください。")
         st.stop()
 
-    # あたたかみのある緑ベースのカラーテーマ & LINE風チャットデザイン
+    # ユニバーサルデザイン（UD）を意識したカラー、フォント、文字サイズ、余白の徹底調整
+    # 文字を大きく（18px基準）、行間をゆったり（1.6）、色の高いコントラスト比を維持
     st.markdown("""
     <style>
+        /* ユニバーサルデザイン用基本フォント & 背景 */
         .stApp {
-            background-color: #F9FBE7;
-        }
-        section[data-testid="stSidebar"] {
-            background-color: #E8F5E9 !important;
-            border-right: 2px solid #C8E6C9;
-        }
-        div.stButton > button {
-            background-color: #4CAF50 !important;
-            color: white !important;
-            border-radius: 20px !important;
-            border: none !important;
-            padding: 0.5rem 1.5rem !important;
-            font-weight: bold !important;
-            transition: all 0.3s;
-        }
-        div.stButton > button:hover {
-            background-color: #2E7D32 !important;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            background-color: #FAFCEE; /* コントラストが柔らかく、目に優しい薄黄緑 */
+            font-family: "BIZ UDゴシック", "BIZ UDPゴシック", "Helvetica Neue", Arial, sans-serif !important;
+            font-size: 18px !important;
+            line-height: 1.6 !important;
+            color: #1A331E !important; /* 高コントラストの深緑文字 */
         }
         
-        /* LINE風チャットコンテナと吹き出し */
+        /* サイドバー */
+        section[data-testid="stSidebar"] {
+            background-color: #E8F5E9 !important;
+            border-right: 3px solid #A5D6A7;
+            font-size: 16px !important;
+        }
+        
+        /* フォームラベルやテキスト入力 */
+        label, p, li, span {
+            font-size: 18px !important;
+            font-weight: 500 !important;
+        }
+        
+        /* サイドバー見出し等 */
+        .sidebar .sidebar-content {
+            font-size: 16px !important;
+        }
+        
+        /* 操作用ボタンのユニバーサルデザイン（大きく押しやすく） */
+        div.stButton > button {
+            background-color: #2E7D32 !important; /* コントラスト比の高い深緑 */
+            color: white !important;
+            border-radius: 25px !important;
+            border: 2px solid #1B5E20 !important;
+            padding: 0.8rem 2.2rem !important;
+            font-size: 18px !important;
+            font-weight: bold !important;
+            transition: all 0.2s;
+            box-shadow: 0px 4px 6px rgba(0,0,0,0.15);
+        }
+        div.stButton > button:hover {
+            background-color: #1B5E20 !important;
+            box-shadow: 0 6px 12px rgba(0,0,0,0.25);
+            transform: translateY(-1px);
+        }
+        
+        /* LINE風チャットコンテナと吹き出しのUD拡大調整 */
         .chat-container {
             display: flex;
             flex-direction: column;
-            gap: 15px;
-            margin-bottom: 20px;
+            gap: 20px;
+            margin-bottom: 30px;
             width: 100%;
         }
         /* 発言者を左右に寄せるための行ラッパー */
@@ -277,35 +328,53 @@ def main_app():
             width: 100%;
         }
         .chat-bubble-user {
-            background-color: #81C784;
-            color: #1B5E20;
-            padding: 12px 18px;
-            border-radius: 18px 18px 0px 18px;
-            max-width: 75%;
-            box-shadow: 0px 2px 5px rgba(0,0,0,0.05);
-            font-size: 15px;
-            line-height: 1.5;
+            background-color: #66BB6A; /* コントラストを高めた明るい緑 */
+            color: #052207; /* 濃い文字で可読性を担保 */
+            padding: 16px 22px;
+            border-radius: 22px 22px 0px 22px;
+            max-width: 80%;
+            box-shadow: 0px 3px 6px rgba(0,0,0,0.1);
+            font-size: 18px !important;
+            line-height: 1.6;
             text-align: left;
+            border: 1px solid #4CAF50;
         }
         .chat-bubble-assistant {
             background-color: #FFFFFF;
-            color: #2E7D32;
-            padding: 12px 18px;
-            border-radius: 18px 18px 18px 0px;
-            max-width: 75%;
-            box-shadow: 0px 2px 5px rgba(0,0,0,0.05);
-            border: 1px solid #C8E6C9;
-            font-size: 15px;
-            line-height: 1.5;
+            color: #1B5E20; /* 濃い緑の文字 */
+            padding: 16px 22px;
+            border-radius: 22px 22px 22px 0px;
+            max-width: 80%;
+            box-shadow: 0px 3px 6px rgba(0,0,0,0.1);
+            border: 2px solid #81C784; /* テーブル線やお知らせ枠と親和性の高い太めの境界線 */
+            font-size: 18px !important;
+            line-height: 1.6;
             text-align: left;
+        }
+        
+        /* チャット吹き出し内のヘッダー（アイコンと名前） */
+        .chat-header {
+            font-weight: 800 !important;
+            font-size: 15px !important;
+            margin-bottom: 8px;
+            opacity: 0.9;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        /* 入力エリア（チャットインプット）のプレースホルダーとテキスト */
+        textarea {
+            font-size: 18px !important;
+            line-height: 1.5 !important;
         }
     </style>
     """, unsafe_allow_html=True)
 
     # --- 左側サイドバー情報入力メニュー ---
     st.sidebar.markdown("""
-    <div style="background-color: #2E7D32; padding: 12px; border-radius: 10px; margin-bottom: 15px; text-align: center;">
-        <h3 style="color: white; margin: 0; font-size: 16px;">📁 コントロールパネル</h3>
+    <div style="background-color: #1B5E20; padding: 14px; border-radius: 12px; margin-bottom: 18px; text-align: center; border: 2px solid #A5D6A7;">
+        <h3 style="color: white; margin: 0; font-size: 18px; font-weight: bold;">📁 コントロールパネル</h3>
     </div>
     """, unsafe_allow_html=True)
 
@@ -389,10 +458,10 @@ def main_app():
 
     # アプリヘッダー表示
     st.markdown(f"""
-    <div style="background-color: #2E7D32; padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 25px; box-shadow: 0px 4px 10px rgba(0,0,0,0.08);">
-        <h1 style="color: white; margin: 0; font-size: 28px;">{st.session_state.app_title}</h1>
-        <p style="color: #E8F5E9; margin: 8px 0 0 0; font-size: 15px;">
-            マニュアル資料や操作手順書を自動でインテリジェントに学習し、チャット形式で分かりやすく回答します。
+    <div style="background-color: #1B5E20; padding: 25px; border-radius: 15px; text-align: center; margin-bottom: 25px; box-shadow: 0px 4px 12px rgba(0,0,0,0.15); border: 2px solid #81C784;">
+        <h1 style="color: white; margin: 0; font-size: 34px; font-weight: 800;">{st.session_state.app_title}</h1>
+        <p style="color: #E8F5E9; margin: 10px 0 0 0; font-size: 18px; font-weight: bold;">
+            操作マニュアルを賢く学習し、図表や設定テーブルの参照箇所を特定しながら、疑問を分かりやすく解決します。
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -455,13 +524,13 @@ def main_app():
     if "messages" not in st.session_state:
         st.session_state.messages = [{
             "role": "assistant", 
-            "content": "汎用 AIFAQチャットシステムへようこそ！お手元の操作マニュアルや資料（Word, PDF, Excel, CSV, PPT等）を左側のメニューからアップロードしていただければ、即座にその内容を学習した専用の回答アシスタントとしてお答えいたします。\nまた、「再現したい成果物の出力サンプル」もお持ちの場合は、そちらをアップロードしていただくことで、マニュアルに沿ったデータ作成手順をお調べします。"
+            "content": "汎用 AIFAQチャットシステムへようこそ！お手元の操作マニュアルや資料（Word, PDF, Excel, CSV, PPT等）を左側のメニューからアップロードしていただければ、即座にその内容を学習した専用の回答アシスタントとしてお答えいたします。\n\n本システムは図表（テーブル）の分析機能を強化しており、案内手順の根拠となったマニュアル内の表を特定してお答えします。\nまた、「再現したい成果物の出力サンプル」をアップロードしていただくことで、それをマニュアルに沿って作成する手順も詳しくお調べします。"
         }]
 
     if st.session_state.format_file_names:
         st.info(f"💡 出力フォーマットサンプル（{', '.join(st.session_state.format_file_names)}）が読み込まれています。チャットで「このサンプルを出力するには？」等と質問してみてください。")
     elif file_names:
-        st.info(f"💡 現在、マニュアル資料（{', '.join(file_names)}）が読み込まれています。学習したシステム・ツール情報に基づいて的確に案内いたします！")
+        st.info(f"💡 現在、マニュアル資料（{', '.join(file_names)}）が読み込まれています。学習したシステム・ツール情報、及びマニュアル内の設定テーブルに基づいて的確に案内いたします！")
     else:
         st.info(f"💡 マニュアル資料を学習させたい場合は、左側のサイドバーからファイルをアップロードしてください。現在アップロードされたマニュアルはありません。")
 
@@ -473,12 +542,12 @@ def main_app():
         for m in st.session_state.messages:
             row_class = "chat-row-assistant" if m["role"] == "assistant" else "chat-row-user"
             bubble_class = "chat-bubble-assistant" if m["role"] == "assistant" else "chat-bubble-user"
-            avatar = "🤖 AI" if m["role"] == "assistant" else "💼 ユーザー"
+            avatar = "🤖 AIアシスタント" if m["role"] == "assistant" else "💼 ユーザー（本部担当）"
             
             st.markdown(f"""
             <div class="{row_class}">
                 <div class="{bubble_class}">
-                    <div style="font-weight: bold; font-size: 12px; margin-bottom: 5px; opacity: 0.85;">{avatar}</div>
+                    <div class="chat-header">{avatar}</div>
                     <div>{m["content"]}</div>
                 </div>
             </div>
@@ -493,7 +562,7 @@ def main_app():
             st.markdown(f"""
             <div class="chat-row-user">
                 <div class="chat-bubble-user">
-                    <div style="font-weight: bold; font-size: 12px; margin-bottom: 5px; opacity: 0.85;">💼 ユーザー</div>
+                    <div class="chat-header">💼 ユーザー（本部担当）</div>
                     <div>{prompt}</div>
                 </div>
             </div>
