@@ -9,7 +9,7 @@ if "app_title" not in st.session_state:
 if "current_welcome_msg" not in st.session_state:
     st.session_state.current_welcome_msg = (
         "はじめまして！「FundMonitor BI お助けAI」です。😊\n\n"
-        "当ツールの利用マニュアルと活用マニュアルのすべてを記憶していますよ。\n"
+        "当ツール（システム名：FundMonitor BI）の利用マニュアルと活用マニュアルのすべてを記憶していますよ。\n"
         "導入方法、AWSの接続手順、データ更新方法、グラフ作成やExcel連動、出力方法など、何でも分かりやすくお答えします！"
     )
 
@@ -282,6 +282,23 @@ def main_app():
 
     # --- 🎨 image_b6fc39.png の配色・丸み・影・枠線をCSSで完全再現 ---
     st.markdown(f"""<style>
+/* 1. 標準サイドバー領域を強制的に100%排除し、コンテナ崩れを物理解消 */
+[data-testid="stSidebar"] {{
+display: none !important;
+}}
+[data-testid="stSidebarCollapsedControl"] {{
+display: none !important;
+}}
+
+/* 画面全体の余白を最大化 */
+.block-container {{
+padding-top: 1.5rem !important;
+padding-bottom: 2rem !important;
+padding-left: 2.5rem !important;
+padding-right: 2.5rem !important;
+max-width: 100% !important;
+}}
+
 /* アプリケーション全体背景 (クリーンなニュアンスグレー) */
 .stApp {{
 background-color: #f4f6f3 !important;
@@ -291,33 +308,29 @@ line-height: 1.6 !important;
 color: #2d3748 !important;
 }}
 
-/* 画面右上の文字サイズ切替エリアの調整 */
-.font-selector-container {{
-display: flex;
-align-items: center;
-justify-content: flex-end;
-gap: 10px;
-color: white;
-font-size: 15px;
-font-weight: bold;
+/* 文字サイズ切替ボタンのアクティブ・非アクティブのトグルのCSS表現 */
+button[key^="btn_f_"] {{
+border-radius: 8px !important;
+font-weight: bold !important;
+transition: all 0.2s !important;
 }}
 
-/* 各種フォーム・アップローダー・サイドカードの装飾 */
-div[data-testid="stExpander"], .css-1r6g8gg, .stForm {{
+/* Streamlitの標準 st.container の枠線を「お手本カード」に完全上書き */
+div[data-testid="stVerticalBlockBorderWrapper"] {{
 background-color: #ffffff !important;
 border: 1px solid #e2e8f0 !important;
 border-radius: 12px !important;
-box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05) !important;
+box-shadow: 0 4px 6px -1px rgba(0,0,0,0.04) !important;
 padding: 20px !important;
 }}
 
-/* モモアバター＆吹き出し風チャットボックスの再現 */
+/* チャットボックス＆吹き出しレイアウト */
 .chat-container {{
 display: flex;
 flex-direction: column;
 gap: 16px;
 width: 100%;
-margin-bottom: 20px;
+margin-bottom: 15px;
 }}
 .chat-row-user {{
 display: flex;
@@ -354,8 +367,8 @@ box-shadow: 0 2px 4px rgba(0,0,0,0.02);
 
 /* アバター用アプローチ */
 .avatar-circle-ai {{
-width: 44px;
-height: 44px;
+width: 42px;
+height: 42px;
 border-radius: 50%;
 background-color: #3b5e43;
 color: white;
@@ -363,89 +376,86 @@ display: flex;
 align-items: center;
 justify-content: center;
 font-weight: bold;
-font-size: 16px;
+font-size: 15px;
 }}
 
-/* 送信ボタンのテラコッタオレンジ（#d97d5a）完全再現 */
-div.stButton > button {{
+/* チャット送信ボタンのテラコッタオレンジ（#d97d5a）完全再現 */
+div.stButton > button[type="submit"], div.stForm button {{
 background-color: #d97d5a !important;
 color: white !important;
 border-radius: 12px !important;
 border: none !important;
-padding: 0.8rem 2.2rem !important;
+padding: 0.8rem 1.8rem !important;
 font-size: 18px !important;
 font-weight: bold !important;
-transition: all 0.2s;
-box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-}}
-div.stButton > button:hover {{
-background-color: #c86e4b !important;
-box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+width: 100% !important;
+transition: all 0.2s !important;
+box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
 }}
 
-/* クイックFAQボタンのスタイル調整 */
-.faq-btn-card {{
-background-color: #f7f9f6 !important;
-border: 1px solid #e2e8f0 !important;
-border-radius: 8px !important;
-padding: 12px 16px !important;
-margin-bottom: 8px !important;
-cursor: pointer !important;
-display: flex !important;
-justify-content: space-between !important;
-align-items: center !important;
-font-size: 15px !important;
-font-weight: bold !important;
-color: #3b5e43 !important;
-transition: background-color 0.2s;
-}}
-.faq-btn-card:hover {{
-background-color: #edf2ed !important;
+/* クイックFAQボタンの見た目カスタム */
+div[data-testid="column"] button {{
+text-align: left !important;
 }}
 </style>""", unsafe_allow_html=True)
 
-    # --- 🌟 image_b6fc39.png のモスグリーン（#3b5e43）ヘッダー & 文字サイズ切替 ---
+    # --- 🌟 モスグリーン（#3b5e43）ヘッダー & 文字サイズ切替の再配置 ---
     header_col1, header_col2 = st.columns([7, 3])
     with header_col1:
         st.markdown(f"""
-        <div style="background-color: #3b5e43; padding: 18px 24px; border-radius: 12px 12px 0 0; display: flex; align-items: center; gap: 15px; margin-bottom: -15px;">
-            <div style="background-color: white; border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 24px;">💡</div>
+        <div style="background-color: #3b5e43; padding: 18px 24px; border-radius: 12px; display: flex; align-items: center; gap: 15px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+            <div style="background-color: white; border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 24px; line-height: 1;">💡</div>
             <div>
                 <div style="color: white; font-size: 26px; font-weight: bold; line-height: 1.1;">{st.session_state.app_title}</div>
-                <div style="color: #cbdad0; font-size: 14px; margin-top: 2px;">公式マニュアル・お助けAIチャット</div>
+                <div style="color: #cbdad0; font-size: 14px; margin-top: 2px; font-weight: bold;">公式マニュアル・お助けAIチャット</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
         
     with header_col2:
-        st.markdown("""<div style="background-color: #3b5e43; padding: 22px 24px; border-radius: 12px 12px 0 0; display: flex; align-items: center; justify-content: flex-end; margin-bottom: -15px; height: 100%;">
-<div class="font-selector-container">文字の大きさ：</div>
-</div>""", unsafe_allow_html=True)
-        # ヘッダーに綺麗にトグルを合わせるための配置
+        # 文字の大きさトグル（アクティブ状態を視覚化）
+        st.markdown(f"""
+        <div style="background-color: #3b5e43; padding: 10px 24px; border-radius: 12px; display: flex; align-items: center; justify-content: flex-end; margin-bottom: 5px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); height: 48px;">
+            <span style="color: white; font-size: 15px; font-weight: bold;">文字の大きさ：</span>
+        </div>
+        """, unsafe_allow_html=True)
+        
         size_cols = st.columns([1, 1, 1])
+        # セッションに合わせてアクティブなボタンラベルをトグルのように美装
+        label_norm = "★ ふつう" if st.session_state.font_size_class == "normal" else "ふつう"
+        label_lrg = "★ 大きめ" if st.session_state.font_size_class == "large" else "大きめ"
+        label_ext = "★ 特大" if st.session_state.font_size_class == "extra" else "特大"
+        
         with size_cols[0]:
-            if st.button("ふつう", key="btn_f_norm", use_container_width=True):
+            if st.button(label_norm, key="btn_f_norm", use_container_width=True):
                 st.session_state.font_size_class = "normal"
                 st.rerun()
         with size_cols[1]:
-            if st.button("大きめ", key="btn_f_lrg", use_container_width=True):
+            if st.button(label_lrg, key="btn_f_lrg", use_container_width=True):
                 st.session_state.font_size_class = "large"
                 st.rerun()
         with size_cols[2]:
-            if st.button("特大", key="btn_f_ext", use_container_width=True):
+            if st.button(label_ext, key="btn_f_ext", use_container_width=True):
                 st.session_state.font_size_class = "extra"
                 st.rerun()
 
     st.write("") # スペーサー
 
-    # 左右スプリットレイアウト (左3: 右7)
+    # 左右スプリットレイアウト (左3: 右7) の完全メイン配置
     left_col, right_col = st.columns([3, 7])
 
     # --- 左側パネル（API設定、マニュアルアップローダー、出力サンプル、クイックFAQ） ---
     with left_col:
+        # システム終了ボタンを左カラムの最上部にスマートに配置
+        if st.button("🛑 システムを終了する", key="btn_sys_term", use_container_width=True):
+            st.session_state.app_terminated = True
+            st.rerun()
+            
+        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+
         # 1. AIキー設定カード
         st.markdown('<div style="font-weight: bold; margin-bottom: 8px;">🔑 AIキー設定（お持ちの場合のみ）</div>', unsafe_allow_html=True)
-        with st.container():
+        with st.container(border=True):
             custom_api_key = st.text_input(
                 "Gemini APIキーを入力",
                 type="password",
@@ -454,10 +464,9 @@ background-color: #edf2ed !important;
             )
             st.markdown("<small style='color: #718096;'>※空欄の場合は、システム既定のキーで自動的に動くので安心してください。</small>", unsafe_allow_html=True)
             
-            # 優先キーの決定
             ACTIVE_API_KEY = custom_api_key if custom_api_key else EMBEDDED_API_KEY
             if ACTIVE_API_KEY:
-                st.info("✔️ APIキーが有効に作動しています")
+                st.success("✔️ APIキーが有効に作動しています")
             else:
                 st.warning("⚠️ APIキーを設定してください")
 
@@ -465,7 +474,7 @@ background-color: #edf2ed !important;
 
         # 2. マニュアル資料読込カード
         st.markdown('<div style="font-weight: bold; margin-bottom: 8px;">📁 手元の資料をAIに読み込ませる</div>', unsafe_allow_html=True)
-        with st.container():
+        with st.container(border=True):
             uploaded_files = st.file_uploader(
                 "資料 (Excel, PDF, Word, CSV, PPT)",
                 type=["docx", "pdf", "pptx", "xlsx", "xls", "csv"],
@@ -523,7 +532,7 @@ background-color: #edf2ed !important;
 
         # 3. 出力フォーマットサンプル読込カード
         st.markdown('<div style="font-weight: bold; margin-bottom: 8px;">📋 出力サンプルの読込</div>', unsafe_allow_html=True)
-        with st.container():
+        with st.container(border=True):
             if "format_samples" not in st.session_state:
                 st.session_state.format_samples = []
             if "format_file_names" not in st.session_state:
@@ -578,13 +587,12 @@ background-color: #edf2ed !important;
         for key_f, label_f in faqs:
             # クリックしたらセッションステートに代入して再起動
             if st.button(label_f, key=f"faq_{key_f}", use_container_width=True):
-                # マークダウンマークや装飾文字を取り除いた質問テキスト
                 st.session_state.faq_trigger = label_f[2:]
                 st.rerun()
 
     # --- 右側パネル（ステータス、チャットスレッド、入力欄） ---
     with right_col:
-        # AIステータスバー & 音声ボタン（モック）の配置
+        # AIステータスバー
         status_col1, status_col2 = st.columns([8, 2])
         with status_col1:
             st.markdown(f"""
@@ -598,7 +606,7 @@ background-color: #edf2ed !important;
             """, unsafe_allow_html=True)
         with status_col2:
             st.markdown("""<div style="height:100%; display:flex; align-items:center; justify-content:center;">
-<button style="border:1px solid #e2e8f0; background:white; border-radius:12px; padding:12px; width:100%; font-weight:bold; cursor:pointer; font-size:14px; color:#a0aec0;">🔇 音声: 停止中</button>
+<button style="border:1px solid #e2e8f0; background:white; border-radius:12px; padding:12px; width:100%; font-weight:bold; cursor:pointer; font-size:14px; color:#a0aec0; height: 100%;">🔇 音声: 停止中</button>
 </div>""", unsafe_allow_html=True)
 
         st.write("")
@@ -633,7 +641,7 @@ background-color: #edf2ed !important;
                 """, unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # チャット入力
+        # チャット入力処理用トリガー変数
         prompt = None
 
         # FAQトリガーによる自動入力
@@ -641,9 +649,20 @@ background-color: #edf2ed !important;
             prompt = st.session_state.faq_trigger
             st.session_state.faq_trigger = None # リセット
 
-        # ユーザー手動入力
-        if user_prompt := st.chat_input("ここに知りたいことを入力してください（例：AWSエラーが出る など）"):
-            prompt = user_prompt
+        # 🌟 右カラムの内部に美しく内包する、テラコッタオレンジ送信ボタン一体型のチャット入力フォーム
+        with st.form(key="chat_input_form", clear_on_submit=True):
+            input_cols = st.columns([82, 18])
+            with input_cols[0]:
+                user_typed = st.text_input(
+                    "ここに知りたいことを入力してください（例：AWSエラーが出る など）",
+                    label_visibility="collapsed",
+                    placeholder="ここに知りたいことを入力してください（例：AWSエラーが出る など）"
+                )
+            with input_cols[1]:
+                send_submitted = st.form_submit_button("送信")
+
+            if send_submitted and user_typed:
+                prompt = user_typed
 
         # 送信実行時
         if prompt:
@@ -672,11 +691,6 @@ background-color: #edf2ed !important;
                 
             st.session_state.messages.append({"role": "assistant", "content": res})
             st.rerun()
-
-# --- アプリケーションの終了用ボタン ---
-if st.sidebar.button("🛑 システムを終了する", key="btn_sys_term"):
-    st.session_state.app_terminated = True
-    st.rerun()
 
 # アプリを実行
 main_app()
