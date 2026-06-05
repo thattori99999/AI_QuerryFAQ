@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 
-# --- 1. ユニバーサル文字サイズ・タイトル等のセッション状態の初期化 ---
-if "font_size_class" not in st.session_state:
-    st.session_state.font_size_class = "normal"  # "normal", "large", "extra"
+# --- 1. タイトル等のセッション状態の初期化 ---
 if "app_title" not in st.session_state:
     st.session_state.app_title = "FundMonitor BI"
 if "current_welcome_msg" not in st.session_state:
@@ -12,10 +10,6 @@ if "current_welcome_msg" not in st.session_state:
         "当ツール（システム名：FundMonitor BI）の利用マニュアルと活用マニュアルのすべてを記憶していますよ。\n"
         "導入方法、AWSの接続手順、データ更新方法、グラフ作成やExcel連動、出力方法など、何でも分かりやすくお答えします！"
     )
-
-# 質問自動入力用
-if "faq_trigger" not in st.session_state:
-    st.session_state.faq_trigger = None
 
 # --- 【最優先ルール】Streamlitのページ構成設定は、他のあらゆるコマンドより先に最上部で実行します ---
 st.set_page_config(page_title=st.session_state.app_title, layout="wide")
@@ -222,7 +216,7 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
 【預かり資産トータルクエリーサービスに関する絶対判定ルール】
 もしアップロードされた資料の内容や質問の文脈が「預かり資産トータルクエリーサービス」に関連する場合、ユーザーのやりたいデータ抽出や操作要望に対して、以下の思考プロセスを厳格に適用して回答を構成してください。
 1. **「標準クエリ（約200種類）の確認」**: まず第一に、ユーザーのやりたい要件にそのまま合致する既存の標準クエリがすでに提供されているかをマニュアル内のクエリ一覧テーブル等から判断して案内してください。
-2. **「既存クエリの修正・加工方法」**: もし完全に合致する既存の標準クエリがそのままでは見つからない場合、どの標準クエリをベース（ひな形）に選択し、それをどのように修正（項目追加、結合、フィルター条件の編集など）すれば目的の結果が得られるかを、具体的かつ分かりやすい手順として説明してください。
+2. **「既存クエリの修正・加工方法」**: もし完全に合致する既存 of 標準クエリがそのままでは見つからない場合、どの標準クエリをベース（ひな形）に選択し、それをどのように修正（項目追加、結合、フィルター条件の編集など）すれば目的の結果が得られるかを、具体的かつ分かりやすい手順として説明してください。
 
 【回答の絶対ルール】
 1. ユーザーの質問に対し、アップロードされたマニュアルの情報を最も信頼できる「絶対の基準（最優先情報）」として参照し、正確に回答を構成してください。
@@ -266,21 +260,11 @@ def main_app():
         st.warning("🛑 システムは終了しました。再度ご利用になる場合は、ブラウザをリロード（再読み込み）してください。")
         st.stop()
 
-    # 文字サイズ設定に応じた動的文字px値の決定
-    if st.session_state.font_size_class == "large":
-        base_font_px = "21px"
-        bubble_font_px = "21px"
-        header_font_px = "19px"
-    elif st.session_state.font_size_class == "extra":
-        base_font_px = "24px"
-        bubble_font_px = "24px"
-        header_font_px = "22px"
-    else:
-        base_font_px = "17px"
-        bubble_font_px = "17px"
-        header_font_px = "15px"
+    # ユニバーサルデザインに準拠した大きめの常時特大フォント（22px基準）
+    base_font_px = "22px"
+    bubble_font_px = "22px"
 
-    # --- 🎨 image_b6fc39.png の配色・丸み・影・枠線をCSSで完全再現 ---
+    # --- 🎨 image_b6fc39.png の配色・丸み・影・枠線をCSSで完全再現 & 2倍アバター ---
     st.markdown(f"""<style>
 /* 1. 標準サイドバー領域を強制的に100%排除し、コンテナ崩れを物理解消 */
 [data-testid="stSidebar"] {{
@@ -308,13 +292,6 @@ line-height: 1.6 !important;
 color: #2d3748 !important;
 }}
 
-/* 文字サイズ切替ボタンのアクティブ・非アクティブのトグルのCSS表現 */
-button[key^="btn_f_"] {{
-border-radius: 8px !important;
-font-weight: bold !important;
-transition: all 0.2s !important;
-}}
-
 /* Streamlitの標準 st.container の枠線を「お手本カード」に完全上書き */
 div[data-testid="stVerticalBlockBorderWrapper"] {{
 background-color: #ffffff !important;
@@ -328,7 +305,7 @@ padding: 20px !important;
 .chat-container {{
 display: flex;
 flex-direction: column;
-gap: 16px;
+gap: 20px;
 width: 100%;
 margin-bottom: 15px;
 }}
@@ -345,7 +322,7 @@ width: 100%;
 .chat-bubble-user {{
 background-color: #f7f9f6;
 color: #2d3748;
-padding: 18px 24px;
+padding: 20px 26px;
 border-radius: 20px 20px 0px 20px;
 max-width: 82%;
 border: 1px solid #e2e8f0;
@@ -356,7 +333,7 @@ box-shadow: 0 2px 4px rgba(0,0,0,0.02);
 .chat-bubble-assistant {{
 background-color: #ffffff;
 color: #2d3748;
-padding: 18px 24px;
+padding: 20px 26px;
 border-radius: 20px 20px 20px 0px;
 max-width: 82%;
 border: 1px solid #e2e8f0;
@@ -365,18 +342,28 @@ line-height: 1.6;
 box-shadow: 0 2px 4px rgba(0,0,0,0.02);
 }}
 
-/* アバター用アプローチ */
+/* アバター用サークル（2倍サイズ化：68px） */
 .avatar-circle-ai {{
-width: 42px;
-height: 42px;
-border-radius: 50%;
-background-color: #3b5e43;
-color: white;
+width: 68px !important;
+height: 68px !important;
+border-radius: 50% !important;
+background-color: #3b5e43 !important;
+color: white !important;
+display: flex !important;
+align-items: center !important;
+justify-content: center !important;
+font-weight: bold !important;
+font-size: 24px !important;
+}}
+
+/* チャットヘッダー（アバターと表記の一体化） */
+.chat-header {{
 display: flex;
 align-items: center;
-justify-content: center;
+gap: 14px;
+font-size: 20px;
 font-weight: bold;
-font-size: 15px;
+color: #2d3748;
 }}
 
 /* チャット送信ボタンのテラコッタオレンジ（#d97d5a）完全再現 */
@@ -386,67 +373,38 @@ color: white !important;
 border-radius: 12px !important;
 border: none !important;
 padding: 0.8rem 1.8rem !important;
-font-size: 18px !important;
+font-size: 20px !important;
 font-weight: bold !important;
 width: 100% !important;
 transition: all 0.2s !important;
 box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
 }}
 
-/* クイックFAQボタンの見た目カスタム */
-div[data-testid="column"] button {{
-text-align: left !important;
+/* チャット入力欄 */
+textarea, input {{
+font-size: 20px !important;
 }}
 </style>""", unsafe_allow_html=True)
 
-    # --- 🌟 モスグリーン（#3b5e43）ヘッダー & 文字サイズ切替の再配置 ---
-    header_col1, header_col2 = st.columns([7, 3])
-    with header_col1:
-        st.markdown(f"""
-        <div style="background-color: #3b5e43; padding: 18px 24px; border-radius: 12px; display: flex; align-items: center; gap: 15px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-            <div style="background-color: white; border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 24px; line-height: 1;">💡</div>
-            <div>
-                <div style="color: white; font-size: 26px; font-weight: bold; line-height: 1.1;">{st.session_state.app_title}</div>
-                <div style="color: #cbdad0; font-size: 14px; margin-top: 2px; font-weight: bold;">公式マニュアル・お助けAIチャット</div>
-            </div>
+    # --- 🌟 モスグリーン（#3b5e43）超巨大ヘッダー ---
+    st.markdown(f"""
+    <div style="background-color: #3b5e43; padding: 22px 30px; border-radius: 12px; display: flex; align-items: center; gap: 20px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+        <div style="background-color: white; border-radius: 50%; width: 68px; height: 68px; display: flex; align-items: center; justify-content: center; font-size: 36px; line-height: 1;">💡</div>
+        <div>
+            <div style="color: white; font-size: 32px; font-weight: bold; line-height: 1.1;">{st.session_state.app_title}</div>
+            <div style="color: #cbdad0; font-size: 16px; margin-top: 4px; font-weight: bold;">公式マニュアル・お助けAIチャット</div>
         </div>
-        """, unsafe_allow_html=True)
-        
-    with header_col2:
-        # 文字の大きさトグル（アクティブ状態を視覚化）
-        st.markdown(f"""
-        <div style="background-color: #3b5e43; padding: 10px 24px; border-radius: 12px; display: flex; align-items: center; justify-content: flex-end; margin-bottom: 5px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); height: 48px;">
-            <span style="color: white; font-size: 15px; font-weight: bold;">文字の大きさ：</span>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        size_cols = st.columns([1, 1, 1])
-        # セッションに合わせてアクティブなボタンラベルをトグルのように美装
-        label_norm = "★ ふつう" if st.session_state.font_size_class == "normal" else "ふつう"
-        label_lrg = "★ 大きめ" if st.session_state.font_size_class == "large" else "大きめ"
-        label_ext = "★ 特大" if st.session_state.font_size_class == "extra" else "特大"
-        
-        with size_cols[0]:
-            if st.button(label_norm, key="btn_f_norm", use_container_width=True):
-                st.session_state.font_size_class = "normal"
-                st.rerun()
-        with size_cols[1]:
-            if st.button(label_lrg, key="btn_f_lrg", use_container_width=True):
-                st.session_state.font_size_class = "large"
-                st.rerun()
-        with size_cols[2]:
-            if st.button(label_ext, key="btn_f_ext", use_container_width=True):
-                st.session_state.font_size_class = "extra"
-                st.rerun()
+    </div>
+    """, unsafe_allow_html=True)
 
     st.write("") # スペーサー
 
     # 左右スプリットレイアウト (左3: 右7) の完全メイン配置
     left_col, right_col = st.columns([3, 7])
 
-    # --- 左側パネル（API設定、マニュアルアップローダー、出力サンプル、クイックFAQ） ---
+    # --- 左側パネル（API設定、マニュアルアップローダー、出力サンプル） ---
     with left_col:
-        # システム終了ボタンを左カラムの最上部にスマートに配置
+        # システム終了ボタンを左カラムの最上部に配置
         if st.button("🛑 システムを終了する", key="btn_sys_term", use_container_width=True):
             st.session_state.app_terminated = True
             st.rerun()
@@ -454,7 +412,7 @@ text-align: left !important;
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
 
         # 1. AIキー設定カード
-        st.markdown('<div style="font-weight: bold; margin-bottom: 8px;">🔑 AIキー設定（お持ちの場合のみ）</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-weight: bold; margin-bottom: 8px; font-size: 19px;">🔑 AIキー設定（お持ちの場合のみ）</div>', unsafe_allow_html=True)
         with st.container(border=True):
             custom_api_key = st.text_input(
                 "Gemini APIキーを入力",
@@ -462,7 +420,7 @@ text-align: left !important;
                 placeholder="入力すると優先して使われます",
                 label_visibility="collapsed"
             )
-            st.markdown("<small style='color: #718096;'>※空欄の場合は、システム既定のキーで自動的に動くので安心してください。</small>", unsafe_allow_html=True)
+            st.markdown("<small style='color: #718096; font-size: 14px;'>※空欄の場合は、システム既定のキーで自動的に動くので安心してください。</small>", unsafe_allow_html=True)
             
             ACTIVE_API_KEY = custom_api_key if custom_api_key else EMBEDDED_API_KEY
             if ACTIVE_API_KEY:
@@ -473,7 +431,7 @@ text-align: left !important;
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
 
         # 2. マニュアル資料読込カード
-        st.markdown('<div style="font-weight: bold; margin-bottom: 8px;">📁 手元の資料をAIに読み込ませる</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-weight: bold; margin-bottom: 8px; font-size: 19px;">📁 手元の資料をAIに読み込ませる</div>', unsafe_allow_html=True)
         with st.container(border=True):
             uploaded_files = st.file_uploader(
                 "資料 (Excel, PDF, Word, CSV, PPT)",
@@ -531,7 +489,7 @@ text-align: left !important;
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
 
         # 3. 出力フォーマットサンプル読込カード
-        st.markdown('<div style="font-weight: bold; margin-bottom: 8px;">📋 出力サンプルの読込</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-weight: bold; margin-bottom: 8px; font-size: 19px;">📋 出力サンプルの読込</div>', unsafe_allow_html=True)
         with st.container(border=True):
             if "format_samples" not in st.session_state:
                 st.session_state.format_samples = []
@@ -573,40 +531,23 @@ text-align: left !important;
                     st.success("クリアしました。")
                     safe_rerun()
 
-        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-
-        # 4. 「よくあるお困りごと」クイックトリガーボタン
-        st.markdown('<div style="font-weight: bold; margin-bottom: 8px;">❓ よくあるお困りごと</div>', unsafe_allow_html=True)
-        faqs = [
-            ("インスト", "📥 Power BIのインストール方法"),
-            ("接続", "☁️ AWS (Athena) への接続方法"),
-            ("更新", "🔄 データを最新に更新する手順"),
-            ("自作", "📊 自作Excelリスト(C:/fdmo)との連携"),
-            ("保存", "💾 Excel用データ(CSV)保存の手順")
-        ]
-        for key_f, label_f in faqs:
-            # クリックしたらセッションステートに代入して再起動
-            if st.button(label_f, key=f"faq_{key_f}", use_container_width=True):
-                st.session_state.faq_trigger = label_f[2:]
-                st.rerun()
-
     # --- 右側パネル（ステータス、チャットスレッド、入力欄） ---
     with right_col:
-        # AIステータスバー
+        # AIステータスバー（アバターやフォントサイズを拡大）
         status_col1, status_col2 = st.columns([8, 2])
         with status_col1:
             st.markdown(f"""
-            <div style="background-color: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 20px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                <div class="avatar-circle-ai">AI</div>
+            <div style="background-color: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 24px; display: flex; align-items: center; gap: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <div class="avatar-circle-ai" style="width: 58px !important; height: 58px !important; font-size: 20px !important;">AI</div>
                 <div>
-                    <div style="font-weight: bold; font-size: 16px; color: #2d3748;">{st.session_state.app_title} サポートAI</div>
-                    <div style="color: #48bb78; font-size: 12px; font-weight: bold;">● いつでも質問に答えますよ</div>
+                    <div style="font-weight: bold; font-size: 22px; color: #2d3748;">{st.session_state.app_title} サポートAI</div>
+                    <div style="color: #48bb78; font-size: 15px; font-weight: bold; margin-top: 3px;">● いつでも質問に答えますよ</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
         with status_col2:
             st.markdown("""<div style="height:100%; display:flex; align-items:center; justify-content:center;">
-<button style="border:1px solid #e2e8f0; background:white; border-radius:12px; padding:12px; width:100%; font-weight:bold; cursor:pointer; font-size:14px; color:#a0aec0; height: 100%;">🔇 音声: 停止中</button>
+<button style="border:1px solid #e2e8f0; background:white; border-radius:12px; padding:16px; width:100%; font-weight:bold; cursor:pointer; font-size:16px; color:#a0aec0; height: 100%;">🔇 音声: 停止中</button>
 </div>""", unsafe_allow_html=True)
 
         st.write("")
@@ -627,29 +568,24 @@ text-align: left !important;
                 bubble_class = "chat-bubble-assistant" if m["role"] == "assistant" else "chat-bubble-user"
                 
                 if m["role"] == "assistant":
-                    header_html = f'<div class="chat-header"><div class="avatar-circle-ai" style="width:28px; height:28px; font-size:11px;">AI</div><span style="font-weight:bold;">サポートAI</span></div>'
+                    header_html = f'<div class="chat-header"><div class="avatar-circle-ai">AI</div><span style="font-size: 20px;">サポートAI</span></div>'
                 else:
-                    header_html = f'<div class="chat-header"><span style="font-size:20px;">💼</span><span style="font-weight:bold;">あなた（入力者）</span></div>'
+                    header_html = f'<div class="chat-header"><span style="font-size:36px; line-height: 1;">💼</span><span style="font-size: 20px;">あなた（入力者）</span></div>'
 
                 st.markdown(f"""
                 <div class="{row_class}">
                     <div class="{bubble_class}">
                         {header_html}
-                        <div style="margin-top: 8px;">{m["content"]}</div>
+                        <div style="margin-top: 12px;">{m["content"]}</div>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # チャット入力処理用トリガー変数
+        # チャット入力
         prompt = None
 
-        # FAQトリガーによる自動入力
-        if st.session_state.faq_trigger:
-            prompt = st.session_state.faq_trigger
-            st.session_state.faq_trigger = None # リセット
-
-        # 🌟 右カラムの内部に美しく内包する、テラコッタオレンジ送信ボタン一体型のチャット入力フォーム
+        # 右カラムの内部に美しく内包するチャット入力フォーム
         with st.form(key="chat_input_form", clear_on_submit=True):
             input_cols = st.columns([82, 18])
             with input_cols[0]:
@@ -672,8 +608,8 @@ text-align: left !important;
                 st.markdown(f"""
                 <div class="chat-row-user">
                     <div class="chat-bubble-user">
-                        <div class="chat-header"><span style="font-size:20px;">💼</span><span style="font-weight:bold;">あなた（入力者）</span></div>
-                        <div style="margin-top: 8px;">{prompt}</div>
+                        <div class="chat-header"><span style="font-size:36px; line-height: 1;">💼</span><span style="font-size: 20px;">あなた（入力者）</span></div>
+                        <div style="margin-top: 12px;">{prompt}</div>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
