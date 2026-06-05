@@ -14,7 +14,7 @@ import re
 import time  # リトライ待機（スリープ）処理のため
 
 # --- 1. APIキーの設定 (APIKEY.ini または クラウドのSecretsからハイブリッド取得) ---
-# ※既存 of API取得ロジックの構造・変数名を1行も崩さずに、クラウド安全対策を内包させています
+# ※既存のAPI取得ロジックの構造・変数名を1行も崩さずに、クラウド安全対策を内包させています
 def load_api_key():
     # 1. まずローカルの APIKEY.ini を探す
     config = configparser.ConfigParser()
@@ -79,6 +79,15 @@ def extract_from_csv(file):
             return f"CSVファイルの読み込みに失敗しました（文字コードエラー）: {str(e)}"
     return df.to_string(index=False)
 
+def get_text_from_file(file):
+    """ファイル形式に応じてテキストを抽出する共通関数"""
+    if file.name.endswith(".docx"): return extract_from_docx(file)
+    elif file.name.endswith(".pdf"): return extract_from_pdf(file)
+    elif file.name.endswith(".pptx"): return extract_from_pptx(file)
+    elif file.name.endswith((".xlsx", ".xls")): return extract_from_excel(file)
+    elif file.name.endswith(".csv"): return extract_from_csv(file)
+    return ""
+
 # --- 404エラーを回避しつつ、利用可能なモデル名を安全に取得する関数 ---
 def get_safe_model_name(api_key):
     try:
@@ -94,7 +103,6 @@ def get_safe_model_name(api_key):
         return 'gemini-1.5-flash'
 
 # --- 3. AI回答生成ロジック (自動リトライ・履歴ウィンドウ削減版) ---
-# ※ 引数 format_sample を追加し、出力テンプレートに沿った回答ができるようプロンプトを拡張
 def get_ai_roleplay_response(messages, persona, product_docs, api_key, format_sample=None):
     target_model = get_safe_model_name(api_key)
     
@@ -181,7 +189,7 @@ if "messages" not in st.session_state:
     st.session_state.messages = [
         {
             "role": "assistant", 
-            "content": "「預かり資産トータルクエリーサービス」らくらく相談窓口へようこそ！\n\n画面の左側で「マニュアル」を読み込ませることで、あなた専用のガイドブックになります。\n操作方法や画面の使い方のほか、「こういう風にデータを出したい」といったご質問にいつでもお答えしますよ。お気軽に何でも聞いてくださいね。"
+            "content": "「預かり資産トータルクエリーサービス」らくらく相談窓口へようこそ！\n\n画面の左側で「マニュアル」を読み込ませることで、あなた専用 of ガイドブックになります。\n操作方法や画面の使い方のほか、「こういう風にデータを出したい」といったご質問にいつでもお答えしますよ。お気軽に何でも聞いてくださいね。"
         }
     ]
 
@@ -348,7 +356,7 @@ user_api_key = st.sidebar.text_input(
     "Gemini APIキー",
     type="password",
     placeholder="AIの鍵をお持ちなら入力してください",
-    help="入力されたキーを最優先で使用します。空欄の場合は標準 of 共有キーが使われます。",
+    help="入力されたキーを最優先で使用します。空欄の場合は標準の共有キーが使われます。",
     label_visibility="collapsed"
 )
 
@@ -371,19 +379,7 @@ if uploaded_files:
     st.sidebar.markdown("<div style='margin-top: 10px; font-weight: bold;'>📖 読み込み中のマニュアル:</div>", unsafe_allow_html=True)
     for f in uploaded_files:
         try:
-            if f.name.endswith(".docx"): 
-                content = extract_from_docx(f)
-            elif f.name.endswith(".pdf"): 
-                content = extract_from_pdf(f)
-            elif f.name.endswith(".pptx"): 
-                content = extract_from_pptx(f)
-            elif f.name.endswith((".xlsx", ".xls")): 
-                content = extract_from_excel(f)
-            elif f.name.endswith(".csv"):
-                content = extract_from_csv(f)
-            else:
-                content = ""
-            
+            content = get_text_from_file(f)
             all_extra_text.append(f"--- ファイル名: {f.name} ---\n{content}")
             st.sidebar.markdown(f'<div class="load-success">✔️ 読込完了: {f.name}</div>', unsafe_allow_html=True)
         except Exception as e:
@@ -393,8 +389,6 @@ if uploaded_files:
 st.sidebar.markdown('<div class="sidebar-heading">📝 出力フォーマットの指定</div>', unsafe_allow_html=True)
 st.sidebar.markdown("<small style='color:#555;'>AIに決まった形式で回答させたい場合は、参考となるサンプルファイル（Excel, PDF, Word, CSV, テキスト）を取り込めます。</small>", unsafe_allow_html=True)
 
-# セッションキーをインクリメントすることでアップローダーをプログラムからクリアする仕組み
-# 前回の実装で漏れていた、サンプルの取り込み形式として ["xlsx", "xls", "pdf"] も完全に追加しました。
 format_file = st.sidebar.file_uploader(
     "出力サンプルの取り込み (テキスト, CSV, Word, Excel, PDF)",
     type=["txt", "csv", "docx", "xlsx", "xls", "pdf"],
@@ -405,17 +399,7 @@ format_file = st.sidebar.file_uploader(
 # アップロードされたファイルをセッション状態に保存
 if format_file:
     try:
-        if format_file.name.endswith(".txt"):
-            st.session_state.format_sample = format_file.read().decode('utf-8', errors='ignore')
-        elif format_file.name.endswith(".csv"):
-            st.session_state.format_sample = extract_from_csv(format_file)
-        elif format_file.name.endswith(".docx"):
-            st.session_state.format_sample = extract_from_docx(format_file)
-        elif format_file.name.endswith((".xlsx", ".xls")):
-            st.session_state.format_sample = extract_from_excel(format_file)
-        elif format_file.name.endswith(".pdf"):
-            st.session_state.format_sample = extract_from_pdf(format_file)
-            
+        st.session_state.format_sample = get_text_from_file(format_file)
         st.sidebar.success("✔️ 出力サンプルを取り込みました！")
     except Exception as e:
         st.sidebar.error(f"サンプルファイルの読み込みに失敗しました。理由: {str(e)}")
@@ -437,11 +421,14 @@ if st.session_state.format_sample:
         st.session_state.format_file_key += 1 # キーを変更してファイルアップローダーを強制リセット
         st.rerun()
 
-# 区切り線とアプリ終了ボタン
+# 区切り線とアプリ終了ボタン (実行環境ポリシーに配慮し安全に対策)
 st.sidebar.markdown("<br><hr>", unsafe_allow_html=True)
 if st.sidebar.button("🛑 アプリを終了する", use_container_width=True):
-    st.sidebar.warning("システムを終了します。このブラウザを閉じてください。")
-    os.kill(os.getpid(), signal.SIGINT)
+    st.sidebar.warning("システムを停止します。このブラウザタブを閉じてください。")
+    try:
+        os.kill(os.getpid(), signal.SIGINT)
+    except Exception:
+        pass # クラウド環境などで強制終了プロセスが無効化されている場合のクラッシュを防ぐ
 
 # --- 8. メインエリアのチャットレイアウト ---
 if not uploaded_files:
@@ -452,7 +439,7 @@ else:
 # チャットメッセージの履歴描画
 for m in st.session_state.messages:
     role = "assistant" if m["role"] == "assistant" else "user"
-    avatar = "🤖" if role == "assistant" else "👤" # シニア層にも直感的にわかるアバターに変更
+    avatar = "🤖" if role == "assistant" else "👤"
     with st.chat_message(role, avatar=avatar):
         st.markdown(m["content"])
 
