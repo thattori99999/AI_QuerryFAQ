@@ -81,11 +81,22 @@ def extract_from_csv(file):
 
 def get_text_from_file(file):
     """ファイル形式に応じてテキストを抽出する共通関数"""
-    if file.name.endswith(".docx"): return extract_from_docx(file)
-    elif file.name.endswith(".pdf"): return extract_from_pdf(file)
-    elif file.name.endswith(".pptx"): return extract_from_pptx(file)
-    elif file.name.endswith((".xlsx", ".xls")): return extract_from_excel(file)
-    elif file.name.endswith(".csv"): return extract_from_csv(file)
+    name_lower = file.name.lower()
+    if name_lower.endswith(".docx"):
+        return extract_from_docx(file)
+    elif name_lower.endswith(".pdf"):
+        return extract_from_pdf(file)
+    elif name_lower.endswith(".pptx"):
+        return extract_from_pptx(file)
+    elif name_lower.endswith((".xlsx", ".xls")):
+        return extract_from_excel(file)
+    elif name_lower.endswith(".csv"):
+        return extract_from_csv(file)
+    elif name_lower.endswith(".txt"):
+        try:
+            return file.getvalue().decode("utf-8")
+        except Exception:
+            return file.getvalue().decode("shift-jis", errors="ignore")
     return ""
 
 # --- 404エラーを回避しつつ、利用可能なモデル名を安全に取得する関数 ---
@@ -189,7 +200,7 @@ if "messages" not in st.session_state:
     st.session_state.messages = [
         {
             "role": "assistant", 
-            "content": "「預かり資産トータルクエリーサービス」らくらく相談窓口へようこそ！\n\n画面の左側で「マニュアル」を読み込ませることで、あなた専用 of ガイドブックになります。\n操作方法や画面の使い方のほか、「こういう風にデータを出したい」といったご質問にいつでもお答えしますよ。お気軽に何でも聞いてくださいね。"
+            "content": "「預かり資産トータルクエリーサービス」らくらく相談窓口へようこそ！\n\n画面の左側で「マニュアル」を読み込ませることで、あなた専用のガイドブックになります。\n操作方法や画面の使い方のほか、「こういう風にデータを出したい」といったご質問にいつでもお答えしますよ。お気軽に何でも聞いてくださいね。"
         }
     ]
 
@@ -205,7 +216,7 @@ st.sidebar.markdown("### 🔤 画面の文字の大きさ")
 font_size_choice = st.sidebar.radio(
     "文字のサイズを選んでください：",
     ["ふつう", "大きく", "とても大きく"],
-    index=1, # デフォルトを「大きく」にして見やすさを最優先に
+    index=1, # デフォルトを「大きく」にして視認性を向上
     horizontal=True,
     label_visibility="collapsed"
 )
@@ -224,14 +235,17 @@ else: # とても大きく
     title_size = "36px"
     bubble_padding = "20px"
 
-# カスタムスタイルの注入 (緑ベースのやさしい3色デザイン)
+# カスタムスタイルの注入 (緑ベースのやさしいあたたかみのある3色デザイン)
+# 1. 全体の背景: 優しいアイボリーグリーン (#F4F8F4)
+# 2. 基本色: 深みのある緑 (#2D6A4F)
+# 3. 吹き出し・ハイライト: 親しみやすい淡い緑 (#A7E0A6 / #E8F0E8)
 st.markdown(f"""
 <style>
     /* 全体フォント設定 */
     html, body, [class*="css"], .stMarkdown p, .stButton button {{
         font-size: {text_size} !important;
         line-height: 1.6 !important;
-        color: #2D312E !important; /* 目が疲れないソフトな黒 */
+        color: #2D312E !important; /* 目に優しいソフトな黒 */
     }}
     
     /* アプリ全体の背景色 */
@@ -275,9 +289,9 @@ st.markdown(f"""
         box-shadow: 0 2px 5px rgba(0,0,0,0.05) !important;
     }}
     
-    /* ユーザー発言（右側・黄緑色の吹き出し） */
+    /* ユーザー発言（右側・明るい緑の吹き出し） */
     div[data-testid="stChatMessage"]:has(span[data-testid="chat-avatar-user"]) {{
-        background-color: #A7E0A6 !important; /* LINE風の優しい緑 */
+        background-color: #A7E0A6 !important; 
         margin-left: 15% !important;
         border: 1px solid #90C88F !important;
     }}
@@ -387,11 +401,12 @@ if uploaded_files:
 
 # --- 出力フォーマットサンプルの取り込み・確認・クリア機能 ---
 st.sidebar.markdown('<div class="sidebar-heading">📝 出力フォーマットの指定</div>', unsafe_allow_html=True)
-st.sidebar.markdown("<small style='color:#555;'>AIに決まった形式で回答させたい場合は、参考となるサンプルファイル（Excel, PDF, Word, CSV, テキスト）を取り込めます。</small>", unsafe_allow_html=True)
+st.sidebar.markdown("<small style='color:#555;'>AIに決まった形式で回答させたい場合は、参考となるサンプルファイル（EXCEL, WORD, PDF, CSV, パワーポイント, テキスト）を取り込めます。</small>", unsafe_allow_html=True)
 
+# すべての要件(Excel, Word, PDF, CSV, PPT, TXT)の拡張子を網羅
 format_file = st.sidebar.file_uploader(
-    "出力サンプルの取り込み (テキスト, CSV, Word, Excel, PDF)",
-    type=["txt", "csv", "docx", "xlsx", "xls", "pdf"],
+    "出力サンプルの取り込み (テキスト, CSV, Word, Excel, PDF, パワーポイント)",
+    type=["txt", "csv", "docx", "xlsx", "xls", "pdf", "pptx"],
     key=f"format_uploader_{st.session_state.format_file_key}",
     label_visibility="collapsed"
 )
@@ -428,7 +443,7 @@ if st.sidebar.button("🛑 アプリを終了する", use_container_width=True):
     try:
         os.kill(os.getpid(), signal.SIGINT)
     except Exception:
-        pass # クラウド環境などで強制終了プロセスが無効化されている場合のクラッシュを防ぐ
+        pass
 
 # --- 8. メインエリアのチャットレイアウト ---
 if not uploaded_files:
