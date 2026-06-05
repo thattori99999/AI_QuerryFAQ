@@ -22,7 +22,6 @@ import re
 import time  # リトライ待機（スリープ）処理のため
 
 # --- 2. APIキーの設定 (APIKEY.ini または クラウドのSecretsからハイブリッド取得) ---
-# ※既存のAPI取得ロジックの構造・変数名を1行も崩さずに、クラウド安全対策を内包させています
 def load_api_key():
     # 1. まずローカルの APIKEY.ini を探す
     config = configparser.ConfigParser()
@@ -49,7 +48,7 @@ INI_KEY = load_api_key()
 EMBEDDED_API_KEY = INI_KEY
 
 
-# --- 3. 各ファイル抽出関数 (ポインタを先頭に戻す seek(0) を追加し、マニュアル内のテーブル構造も合わせて抽出) ---
+# --- 3. 各ファイル抽出関数 (マニュアル内のテーブル構造も合わせて精密に抽出) ---
 def extract_from_docx(file):
     file.seek(0)
     doc = Document(file)
@@ -63,7 +62,6 @@ def extract_from_docx(file):
         tables_text.append(f"\n\n[資料内テーブル #{t_idx+1}]")
         for row in table.rows:
             row_data = [cell.text.strip().replace('\n', ' ') for cell in row.cells]
-            # 簡易的なテーブル構造をテキスト化
             tables_text.append(" | ".join(row_data))
             
     return paragraphs_text + "\n" + "\n".join(tables_text)
@@ -80,10 +78,8 @@ def extract_from_pptx(file):
     for s_idx, slide in enumerate(prs.slides):
         text_runs.append(f"\n--- スライド #{s_idx+1} ---")
         for shape in slide.shapes:
-            # 一般テキスト
             if hasattr(shape, "text") and shape.text:
                 text_runs.append(shape.text)
-            # テーブル（表データ）の抽出を追加
             if shape.has_table:
                 table = shape.table
                 text_runs.append(f"\n[スライド内テーブル]")
@@ -139,11 +135,9 @@ def get_safe_model_name(api_key):
     except:
         return 'gemini-1.5-flash'
 
-
-# --- 3-2. ファイル名からメインのシステム・サービス名を抽出するクレンジング関数（予備処理） ---
+# ファイル名からメインのシステム・サービス名を抽出するクレンジング関数
 def clean_service_name(filename):
     base = os.path.splitext(filename)[0]
-    # 一般的なドキュメント名称やノイズを正規表現で排除
     patterns = [
         r"(操作)?マニュアル", r"取扱説明書", r"手順書", r"仕様書", r"概要書", r"説明書",
         r"【.*】", r"\[.*\]", r"（.*）", r"\(.*\)",
@@ -156,19 +150,17 @@ def clean_service_name(filename):
     cleaned = cleaned.strip()
     return cleaned if cleaned else base
 
-
-# --- 3-3. マニュアルテキストを解析して、メインの製品・システム名をGeminiからスマートに特定する関数 ---
+# マニュアルテキストを解析して、メインの製品・システム名をGeminiからスマートに特定する関数
 def extract_service_name_via_ai(text, default_name, api_key):
     try:
         genai.configure(api_key=api_key)
         target_model = get_safe_model_name(api_key)
         model = genai.GenerativeModel(target_model)
         
-        # テキストの先頭1500文字程度を利用して推測
         prompt = f"""
 以下は、ユーザーからアップロードされたマニュアルまたは資料テキストの冒頭部分です。
 この資料が「何のツール」「何のサービス」または「どのシステム」について説明しているものか、最もメインとなる固有名称を日本語で1つだけ見つけ出してください。
-余計な説明、前置き、記号、拡張子などは絶対に含めず、純粋な名称のみを返してください。（例：「軽技WEB」「預かり資産トータルクエリーサービス」など）
+余計な説明、前置き、記号、拡張子などは絶対に含めず、純粋な名称のみを返してください。
 最大でも20文字以内とします。特定が難しい場合は「{default_name}」を返してください。
 
 【資料テキストの一部】
@@ -176,7 +168,7 @@ def extract_service_name_via_ai(text, default_name, api_key):
 """
         response = model.generate_content(prompt)
         res_text = response.text.strip()
-        res_text = re.sub(r"[`'\"]", "", res_text)  # 引用符の除去
+        res_text = re.sub(r"[`'\"]", "", res_text)
         res_text = res_text.split("\n")[0].strip()
         return res_text if res_text else default_name
     except:
@@ -186,8 +178,6 @@ def extract_service_name_via_ai(text, default_name, api_key):
 # --- 4. AI回答生成ロジック (自動リトライ・履歴ウィンドウ削減版 / 汎用化プロンプト) ---
 def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_key):
     target_model = get_safe_model_name(api_key)
-    
-    # トークン爆張を防ぐため、AIに送る「過去の履歴」を最新の6発言（3往復）に限定
     recent_messages = [messages[0]] + messages[-5:] if len(messages) > 6 else messages
 
     for attempt in range(5):
@@ -203,7 +193,6 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
                 role_label = "AIアシスタント(あなた)" if m["role"] == "assistant" else "ユーザー"
                 history_text += f"{role_label}: {m['content']}\n"
 
-            # 汎用FAQ用のシステムプロンプト構成（テーブル参照指示を強化）
             system_prompt = f"""
 あなたはユーザーから提供されたマニュアルや資料に基づいて、操作手順や記載内容を正確に説明する熟練のAIFAQアシスタントです。
 操作方法、機能説明、データ構造、エラー解決等に関する質問に対して、丁寧かつ極めて分かりやすく回答してください。
@@ -232,9 +221,9 @@ def get_ai_roleplay_response(messages, persona, product_docs, format_docs, api_k
 1. ユーザーの質問に対し、アップロードされたマニュアルの情報を最も信頼できる「絶対の基準（最優先情報）」として参照し、正確に回答を構成してください。
 2. アップロードされた情報だけで判断がつかない不確実な事項やマニュアルに記載がない操作については、知ったかぶりをせず、「マニュアル等に記載がありませんでした」と明示したうえで、一般的な推奨方法を補足するか、専門の窓口や管理者への確認を案内してください。
 3. 専門用語が使われている場合でも、操作担当者がスムーズに迷わず作業を進められるよう、ステップ・バイ・ステップの具体的な手順や丁寧な表現で回答してください。
-4. AIとしてのメタな発言（例：「以上がアップロードされたマニュアルに基づく回答です」など）は含めず、ユーザーへの親切な回答テキストのみを親身なLINE風の対話形式で出力してください。
+4. AIとしてのメタな発言（例：「以上がアップロードされたマニュアルに基づく回答です」など）は含めず、ユーザーへの親切な回答テキストのみを親みやすいLINE風の対話形式で出力してください。
 
-【これまでの会話履歴（※直近の重要な会話のみ抽出）】
+【これまでの会話履歴】
 {history_text}
 
 Above rules and history will be used to generate the next response.
@@ -270,7 +259,7 @@ def main_app():
         st.warning("🛑 システムは終了しました。再度ご利用になる場合は、ブラウザをリロード（再読み込み）してください。")
         st.stop()
 
-    # --- Streamlitの干渉を避けるため、CSS指定は余白を除去してインポートします ---
+    # すべてのインライン干渉を完全に防ぐ、ユニバーサルデザイン用の一括CSS設計（改行干渉を徹底排除）
     st.markdown("""<style>
 .stApp {
 background-color: #FAFCEE !important;
@@ -287,9 +276,6 @@ font-size: 16px !important;
 label, p, li, span {
 font-size: 18px !important;
 font-weight: 500 !important;
-}
-.sidebar .sidebar-content {
-font-size: 16px !important;
 }
 div.stButton > button {
 background-color: #2E7D32 !important;
@@ -368,7 +354,42 @@ textarea {
 font-size: 18px !important;
 line-height: 1.5 !important;
 }
+
+/* 🌟 StreamlitのMarkdown干渉を完璧にバイパスして表示させるための特製クラス指定 */
+.custom-title-card {
+background-color: #1B5E20 !important;
+padding: 40px 30px !important;
+border-radius: 18px !important;
+text-align: center !important;
+margin-bottom: 30px !important;
+box-shadow: 0px 6px 16px rgba(0,0,0,0.18) !important;
+border: 3px solid #81C784 !important;
+width: 100% !important;
+box-sizing: border-box !important;
+}
+.custom-title-text {
+color: #FFFFFF !important;
+margin: 0 !important;
+padding: 0 !important;
+font-size: 42px !important;
+font-weight: bold !important;
+line-height: 1.3 !important;
+word-break: break-word !important;
+font-family: 'BIZ UDゴシック', sans-serif !important;
+}
+.custom-title-sub {
+color: #E8F5E9 !important;
+margin: 15px 0 0 0 !important;
+padding: 0 !important;
+font-size: 20px !important;
+font-weight: bold !important;
+opacity: 0.95 !important;
+letter-spacing: 0.5px !important;
+line-height: 1.4 !important;
+font-family: 'BIZ UDゴシック', sans-serif !important;
+}
 </style>""", unsafe_allow_html=True)
+
 
     # --- 左側サイドバー情報入力メニュー ---
     st.sidebar.markdown("""<div style="background-color: #1B5E20; padding: 14px; border-radius: 12px; margin-bottom: 18px; text-align: center; border: 2px solid #A5D6A7;">
@@ -427,12 +448,8 @@ line-height: 1.5 !important;
 
     # 読み込まれたマニュアルに基づいてタイトルを賢く自動抽出・変更
     if file_names:
-        # 新しくファイルを読み込んだ際、セッションキャッシュを更新
         if "last_processed_files" not in st.session_state or st.session_state.last_processed_files != file_names:
-            # 1. まずは正規表現によるクレンジングをベースラインにする
             default_service_name = clean_service_name(file_names[0])
-            
-            # 2. APIキーが有効な場合は、AIを活用してドキュメントの本当のシステム・サービス名を正確に特定
             if ACTIVE_API_KEY and all_extra_text:
                 joined_samples = "\n".join(all_extra_text)
                 detected_name = extract_service_name_via_ai(joined_samples, default_service_name, ACTIVE_API_KEY)
@@ -442,7 +459,6 @@ line-height: 1.5 !important;
                 
             st.session_state.last_processed_files = file_names
             
-        # アプリタイトルの設定
         st.session_state.app_title = f"📖 {st.session_state.detected_service_name} 操作説明 AIFAQ"
         current_persona = {
             "description": f"提供されたマニュアル「{', '.join(file_names)}」（対象システム/ツール: {st.session_state.detected_service_name}）に精通した、専属の優秀なAIFAQ操作説明アシスタントです。"
@@ -453,9 +469,10 @@ line-height: 1.5 !important;
             "description": "現在は特定のマニュアルはロードされていません。ロードされる多様なシステム・ツール資料や操作手順、一般的な疑問に対して柔軟に回答する汎用AIFAQアシスタントです。"
         }
 
-    # --- 💡見出しタグ(h1, p)を撤廃し、インライン!important適用した確実な「文字サイズ42px」の超美麗タイトルブロック ---
-    # Markdownパーサーによるバグを回避するため、改行文字を一切挟まない1行のHTMLコードとして出力します。
-    st.markdown(f"""<div style="background-color: #1B5E20 !important; padding: 40px 30px !important; border-radius: 18px !important; text-align: center !important; margin-bottom: 30px !important; box-shadow: 0px 6px 16px rgba(0,0,0,0.18) !important; border: 3px solid #81C784 !important;"><div style="color: white !important; margin: 0 !important; font-size: 42px !important; font-weight: bold !important; line-height: 1.3 !important; word-break: break-word !important; font-family: 'BIZ UDゴシック', sans-serif !important;">{st.session_state.app_title}</div><div style="color: #E8F5E9 !important; margin: 15px 0 0 0 !important; font-size: 20px !important; font-weight: bold !important; opacity: 0.95 !important; letter-spacing: 0.5px !important; font-family: 'BIZ UDゴシック', sans-serif !important;">操作マニュアルを賢く学習し、図表や設定テーブルの参照箇所を特定しながら、疑問を分かりやすく解決します。</div></div>""", unsafe_allow_html=True)
+
+    # --- 💡100%確実に表示が保証される、Streamlit非干渉クラス構造による美麗タイトルヘッダー（行頭・改行の干渉を排除） ---
+    st.markdown(f'<div class="custom-title-card"><div class="custom-title-text">{st.session_state.app_title}</div><div class="custom-title-sub">操作マニュアルを賢く学習し、図表や設定テーブルの参照箇所を特定しながら、疑問を分かりやすく解決します。</div></div>', unsafe_allow_html=True)
+
 
     st.sidebar.markdown("---")
 
@@ -502,14 +519,15 @@ line-height: 1.5 !important;
             st.session_state.format_samples = []
             st.session_state.format_file_names = []
             st.sidebar.success("サンプルファイルをクリアしました。")
-            st.rerun()
+            safe_rerun()
 
     st.sidebar.markdown("---")
     
     if st.sidebar.button("🛑 アプリを終了する"):
         st.session_state.app_terminated = True
         st.sidebar.warning("システムを終了しました。")
-        st.rerun()
+        safe_rerun()
+
 
     # --- 6. セッション状態の初期化 ---
     if "messages" not in st.session_state:
@@ -550,6 +568,7 @@ line-height: 1.5 !important;
             """, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
+
     # ユーザー入力を受付
     if prompt := st.chat_input("マニュアルに関する質問や操作方法の疑問を入力してください..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -577,7 +596,7 @@ line-height: 1.5 !important;
                 st.markdown(res)
             
         st.session_state.messages.append({"role": "assistant", "content": res})
-        st.rerun()
+        safe_rerun()
 
 # --- メインロジックを実行 ---
 main_app()
