@@ -352,15 +352,24 @@ def main_app():
             text-align: left;
         }
         
-        /* チャット吹き出し内のヘッダー（アイコンと名前） */
+        /* チャット吹き出し内のヘッダー（アイコンと名前） - UD特大アイコン用に調整 */
         .chat-header {
             font-weight: 800 !important;
-            font-size: 15px !important;
-            margin-bottom: 8px;
-            opacity: 0.9;
+            font-size: 18px !important; /* 文字を少し大きく */
+            margin-bottom: 12px;
+            opacity: 0.95;
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 10px;
+            color: #111111;
+        }
+
+        /* ユニバーサルデザイン用：2倍以上に拡大した特大アイコン（絵文字） */
+        .chat-icon {
+            font-size: 36px !important; /* 従来の15pxから大幅拡大 */
+            display: inline-block;
+            vertical-align: middle;
+            line-height: 1;
         }
         
         /* 入力エリア（チャットインプット）のプレースホルダーとテキスト */
@@ -456,11 +465,11 @@ def main_app():
             "description": "現在は特定のマニュアルはロードされていません。ロードされる多様なシステム・ツール資料や操作手順、一般的な疑問に対して柔軟に回答する汎用AIFAQアシスタントです。"
         }
 
-    # アプリヘッダー表示
+    # アプリヘッダー表示 - タイトルの文字サイズを従来比2倍（68px）に超拡大し視認性を大幅強化
     st.markdown(f"""
-    <div style="background-color: #1B5E20; padding: 25px; border-radius: 15px; text-align: center; margin-bottom: 25px; box-shadow: 0px 4px 12px rgba(0,0,0,0.15); border: 2px solid #81C784;">
-        <h1 style="color: white; margin: 0; font-size: 34px; font-weight: 800;">{st.session_state.app_title}</h1>
-        <p style="color: #E8F5E9; margin: 10px 0 0 0; font-size: 18px; font-weight: bold;">
+    <div style="background-color: #1B5E20; padding: 35px 25px; border-radius: 15px; text-align: center; margin-bottom: 25px; box-shadow: 0px 4px 12px rgba(0,0,0,0.15); border: 2px solid #81C784;">
+        <h1 style="color: white; margin: 0; font-size: 68px; font-weight: 900; line-height: 1.2; letter-spacing: -1px;">{st.session_state.app_title}</h1>
+        <p style="color: #E8F5E9; margin: 15px 0 0 0; font-size: 19px; font-weight: bold; opacity: 0.95;">
             操作マニュアルを賢く学習し、図表や設定テーブルの参照箇所を特定しながら、疑問を分かりやすく解決します。
         </p>
     </div>
@@ -524,7 +533,7 @@ def main_app():
     if "messages" not in st.session_state:
         st.session_state.messages = [{
             "role": "assistant", 
-            "content": "汎用 AIFAQチャットシステムへようこそ！お手元の操作マニュアルや資料（Word, PDF, Excel, CSV, PPT等）を左側のメニューからアップロードしていただければ、即座にその内容を学習した専用の回答アシスタントとしてお答えいたします。\n\n本システムは図表（テーブル）の分析機能を強化しており、案内手順の根拠となったマニュアル内の表を特定してお答えします。\nまた、「再現したい成果物の出力サンプル」をアップロードしていただくことで、それをマニュアルに沿って作成する手順も詳しくお調べします。"
+            "content": "汎用 AIFAQチャットシステムへようこそ！お手元の操作マニュアルや資料（Word, PDF, Excel, CSV, PPT等）を左側のメニューからアップロードしていただければ、即座にその内容を学習した専用 of 回答アシスタントとしてお答えいたします。\n\n本システムは図表（テーブル）の分析機能を強化しており、案内手順の根拠となったマニュアル内の表を特定してお答えします。\nまた、「再現したい成果物の出力サンプル」をアップロードしていただくことで、それをマニュアルに沿って作成する手順も詳しくお調べします。"
         }]
 
     if st.session_state.format_file_names:
@@ -542,12 +551,17 @@ def main_app():
         for m in st.session_state.messages:
             row_class = "chat-row-assistant" if m["role"] == "assistant" else "chat-row-user"
             bubble_class = "chat-bubble-assistant" if m["role"] == "assistant" else "chat-bubble-user"
-            avatar = "🤖 AIアシスタント" if m["role"] == "assistant" else "💼 ユーザー（本部担当）"
+            
+            # 発言者に合わせた絵文字と大きなアイコンのHTML
+            if m["role"] == "assistant":
+                avatar_html = '<span class="chat-icon">🤖</span> AIアシスタント'
+            else:
+                avatar_html = '<span class="chat-icon">💼</span> ユーザー（本部担当）'
             
             st.markdown(f"""
             <div class="{row_class}">
                 <div class="{bubble_class}">
-                    <div class="chat-header">{avatar}</div>
+                    <div class="chat-header">{avatar_html}</div>
                     <div>{m["content"]}</div>
                 </div>
             </div>
@@ -558,11 +572,12 @@ def main_app():
     if prompt := st.chat_input("マニュアルに関する質問や操作方法の疑問を入力してください..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         
+        # ユーザーの発言を即時描画（特大アイコン仕様）
         with chat_placeholder:
             st.markdown(f"""
             <div class="chat-row-user">
                 <div class="chat-bubble-user">
-                    <div class="chat-header">💼 ユーザー（本部担当）</div>
+                    <div class="chat-header"><span class="chat-icon">💼</span> ユーザー（本部担当）</div>
                     <div>{prompt}</div>
                 </div>
             </div>
