@@ -243,7 +243,7 @@ Above rules and history will be used to generate the next response.
     return "【混雑エラー】現在AIへのリクエストが連続しています。無料枠の制限を超過したため、1分ほど待ってから再度送信してください。"
 
 
-# --- Rerun処理の安全な抽象化 ---
+# --- Rerun処理 of 安全な抽象化 ---
 def safe_rerun():
     try:
         st.rerun()
@@ -264,7 +264,7 @@ def main_app():
     base_font_px = "22px"
     bubble_font_px = "22px"
 
-    # --- 🎨 image_b6fc39.png の配色・丸み・影・枠線をCSSで完全再現 ---
+    # --- 🎨 温かみ・リッチ感・文字や各種メニューボタンの「超高コントラスト視認性」をCSSで完全追求 ---
     st.markdown(f"""<style>
 /* 1. 標準サイドバー領域を強制的に100%排除し、コンテナ崩れを物理解消 */
 [data-testid="stSidebar"] {{
@@ -277,28 +277,28 @@ display: none !important;
 /* 画面全体の余白を最大化 & 見切れ対策のパディング追加 */
 .block-container {{
 padding-top: 3.5rem !important;
-padding-bottom: 6rem !important; /* チャット入力のフローティングスペース確保 */
+padding-bottom: 6rem !important;
 padding-left: 2.5rem !important;
 padding-right: 2.5rem !important;
 max-width: 100% !important;
 }}
 
-/* アプリケーション全体背景 (クリーンなニュアンスグレー) */
+/* アプリケーション全体背景 (温かみのあるニュアンスベージュ・オフホワイト) */
 .stApp {{
-background-color: #f4f6f3 !important;
+background-color: #f6f5f0 !important;
 font-family: "BIZ UDゴシック", "BIZ UDPゴシック", "Helvetica Neue", Arial, sans-serif !important;
 font-size: {base_font_px} !important;
 line-height: 1.6 !important;
-color: #2d3748 !important;
+color: #1a2a1d !important; /* 視認性を極限まで高めた濃いインクグリーン */
 }}
 
-/* Streamlitの標準 st.container の枠線を「お手本カード」に完全上書き */
+/* Streamlitの標準 st.container の枠線を「お手本カード」に完全上書き (丸みと柔らかな陰影) */
 div[data-testid="stVerticalBlockBorderWrapper"] {{
 background-color: #ffffff !important;
-border: 1px solid #e2e8f0 !important;
-border-radius: 12px !important;
-box-shadow: 0 4px 6px -1px rgba(0,0,0,0.04) !important;
-padding: 20px !important;
+border: 1.5px solid #d0d8cd !important; /* 温かみのあるオリーブグレーの太めボーダー */
+border-radius: 14px !important;
+box-shadow: 0 6px 12px -2px rgba(27,45,32,0.06) !important; /* 緑に調和したリッチな陰影 */
+padding: 24px !important;
 }}
 
 /* チャットボックス＆吹き出しレイアウト */
@@ -320,26 +320,26 @@ justify-content: flex-start;
 width: 100%;
 }}
 .chat-bubble-user {{
-background-color: #f7f9f6;
-color: #2d3748;
-padding: 20px 26px;
+background-color: #f0f3ee; /* 薄いオリーブグレー */
+color: #132817;
+padding: 22px 28px;
 border-radius: 20px 20px 0px 20px;
 max-width: 82%;
-border: 1px solid #e2e8f0;
+border: 1.5px solid #c8d3c5;
 font-size: {bubble_font_px} !important;
 line-height: 1.6;
-box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+box-shadow: 0 3px 6px rgba(0,0,0,0.02);
 }}
 .chat-bubble-assistant {{
 background-color: #ffffff;
-color: #2d3748;
-padding: 20px 26px;
+color: #132817;
+padding: 22px 28px;
 border-radius: 20px 20px 20px 0px;
 max-width: 82%;
-border: 1px solid #e2e8f0;
+border: 1.5px solid #c8d3c5;
 font-size: {bubble_font_px} !important;
 line-height: 1.6;
-box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+box-shadow: 0 3px 6px rgba(0,0,0,0.02);
 }}
 
 /* アバター用サークル（2倍サイズ化：68px） */
@@ -347,13 +347,14 @@ box-shadow: 0 2px 4px rgba(0,0,0,0.02);
 width: 68px !important;
 height: 68px !important;
 border-radius: 50% !important;
-background-color: #3b5e43 !important;
+background-color: #2d4a34 !important; /* より深みのあるリッチな常盤色 */
 color: white !important;
 display: flex !important;
 align-items: center !important;
 justify-content: center !important;
 font-weight: bold !important;
 font-size: 24px !important;
+box-shadow: 0 4px 8px rgba(0,0,0,0.08) !important;
 }}
 
 /* チャットヘッダー（アバターと表記の一体化） */
@@ -363,36 +364,73 @@ align-items: center;
 gap: 14px;
 font-size: 20px;
 font-weight: bold;
-color: #2d3748;
+color: #132817;
 }}
 
-/* チャット送信ボタンのテラコッタオレンジ（#d97d5a）完全再現 */
+/* 送信ボタン等 (温かみのあるテラコッタオレンジ：#d36a43) */
 div.stButton > button[type="submit"], div.stForm button {{
-background-color: #d97d5a !important;
+background-color: #d36a43 !important; /* コントラストを高めたテラコッタ */
 color: white !important;
 border-radius: 12px !important;
 border: none !important;
-padding: 0.8rem 1.8rem !important;
+padding: 0.9rem 2rem !important;
 font-size: 20px !important;
-font-weight: bold !important;
+font-weight: 800 !important;
 width: 100% !important;
 transition: all 0.2s !important;
-box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+box-shadow: 0 4px 10px rgba(211,106,67,0.25) !important;
+}}
+div.stButton > button[type="submit"]:hover, div.stForm button:hover {{
+background-color: #ba572a !important;
+box-shadow: 0 6px 14px rgba(211,106,67,0.35) !important;
 }}
 
-/* チャット入力欄 */
+/* 【視認性の徹底強化】左パネルの見出し・メニューの文字色をハッキリした深緑に変更 */
+.left-panel-title {{
+font-size: 21px !important;
+font-weight: 800 !important;
+color: #1a331e !important;
+margin-bottom: 12px !important;
+display: flex;
+align-items: center;
+gap: 8px;
+}}
+
+/* ドラッグ＆ドロップ領域 (st.file_uploader) の高コントラスト枠線・視認性確保 */
+div[data-testid="stFileUploader"] {{
+border: 2px dashed #2d4a34 !important; /* 濃いオリーブ破線 */
+background-color: #fafbfc !important;
+border-radius: 12px !important;
+padding: 15px !important;
+}}
+div[data-testid="stFileUploader"] section {{
+color: #1a331e !important; /* 濃い文字 */
+font-weight: bold !important;
+}}
+div[data-testid="stFileUploader"] button {{
+background-color: #2d4a34 !important;
+color: white !important;
+font-weight: bold !important;
+border-radius: 8px !important;
+border: none !important;
+box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+}}
+
+/* 入力エリアのフォントサイズアップ */
 textarea, input {{
 font-size: 20px !important;
+color: #1a331e !important;
+font-weight: 600 !important;
 }}
 </style>""", unsafe_allow_html=True)
 
-    # --- 🌟 モスグリーン（#3b5e43）超巨大ヘッダー (見切れを防ぐため margin-topを追加) ---
+    # --- 🌟 リッチモスグリーン（#2d4a34）超巨大ヘッダー (上部見切れを防ぐため十分な安全マージンを設定) ---
     st.markdown(f"""
-    <div style="background-color: #3b5e43; padding: 22px 30px; border-radius: 12px; display: flex; align-items: center; gap: 20px; margin-top: 15px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-        <div style="background-color: white; border-radius: 50%; width: 68px; height: 68px; display: flex; align-items: center; justify-content: center; font-size: 36px; line-height: 1;">💡</div>
+    <div style="background-color: #2d4a34; padding: 25px 35px; border-radius: 14px; display: flex; align-items: center; gap: 20px; margin-top: 20px; margin-bottom: 25px; box-shadow: 0 6px 15px rgba(45,74,52,0.15); border: 1px solid #4a6c53;">
+        <div style="background-color: #f6f5f0; border-radius: 50%; width: 72px; height: 72px; display: flex; align-items: center; justify-content: center; font-size: 38px; line-height: 1; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);">💡</div>
         <div>
-            <div style="color: white; font-size: 32px; font-weight: bold; line-height: 1.1;">{st.session_state.app_title}</div>
-            <div style="color: #cbdad0; font-size: 16px; margin-top: 4px; font-weight: bold;">公式マニュアル・お助けAIチャット</div>
+            <div style="color: white; font-size: 34px; font-weight: 800; line-height: 1.1; letter-spacing: 0.5px;">{st.session_state.app_title}</div>
+            <div style="color: #c9ded0; font-size: 16px; margin-top: 5px; font-weight: bold; letter-spacing: 0.8px;">公式マニュアル・お助けAIチャット</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -404,15 +442,15 @@ font-size: 20px !important;
 
     # --- 左側パネル（API設定、マニュアルアップローダー、出力サンプル） ---
     with left_col:
-        # システム終了ボタンを左カラムの最上部に配置
+        # システム終了ボタンを目立ちやすく、視認性の高いテラコッタボタンに変更して配置
         if st.button("🛑 システムを終了する", key="btn_sys_term", use_container_width=True):
             st.session_state.app_terminated = True
             st.rerun()
             
-        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
 
         # 1. AIキー設定カード
-        st.markdown('<div style="font-weight: bold; margin-bottom: 8px; font-size: 19px;">🔑 AIキー設定（お持ちの場合のみ）</div>', unsafe_allow_html=True)
+        st.markdown('<div class="left-panel-title">🔑 AIキー設定（お持ちの場合のみ）</div>', unsafe_allow_html=True)
         with st.container(border=True):
             custom_api_key = st.text_input(
                 "Gemini APIキーを入力",
@@ -420,18 +458,18 @@ font-size: 20px !important;
                 placeholder="入力すると優先して使われます",
                 label_visibility="collapsed"
             )
-            st.markdown("<small style='color: #718096; font-size: 14px;'>※空欄の場合は、システム既定のキーで自動的に動くので安心してください。</small>", unsafe_allow_html=True)
+            st.markdown("<div style='color: #1a331e; font-size: 15px; font-weight: bold; margin-top: 6px;'>※空欄の場合は、システム既定のキーで自動的に動くので安心してください。</div>", unsafe_allow_html=True)
             
             ACTIVE_API_KEY = custom_api_key if custom_api_key else EMBEDDED_API_KEY
             if ACTIVE_API_KEY:
-                st.success("✔️ APIキーが有効に作動しています")
+                st.success("✔️ AIキーが有効に作動しています")
             else:
                 st.warning("⚠️ APIキーを設定してください")
 
-        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
 
         # 2. マニュアル資料読込カード
-        st.markdown('<div style="font-weight: bold; margin-bottom: 8px; font-size: 19px;">📁 手元の資料をAIに読み込ませる</div>', unsafe_allow_html=True)
+        st.markdown('<div class="left-panel-title">📁 手元の資料をAIに読み込ませる</div>', unsafe_allow_html=True)
         with st.container(border=True):
             uploaded_files = st.file_uploader(
                 "資料 (Excel, PDF, Word, CSV, PPT)",
@@ -481,15 +519,15 @@ font-size: 20px !important;
                 "description": f"提供されたマニュアル「{', '.join(file_names)}」（対象システム/ツール: {st.session_state.app_title}）に精通した、専属の優秀なAIFAQ操作説明アシスタントです。"
             }
         else:
-            st.session_state.app_title = "汎用AIFAQチャットシステム"
+            st.session_state.app_title = "汎用AIFAQシステム"
             current_persona = {
                 "description": "現在は特定のマニュアルは読み込まれていません。アップロードされる多種多様なマニュアルに沿って、操作方法や記載内容に回答する汎用お助けAIFAQアシスタントです。"
             }
 
-        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
 
         # 3. 出力フォーマットサンプル読込カード
-        st.markdown('<div style="font-weight: bold; margin-bottom: 8px; font-size: 19px;">📋 出力サンプルの読込</div>', unsafe_allow_html=True)
+        st.markdown('<div class="left-panel-title">📋 出力サンプルの読込</div>', unsafe_allow_html=True)
         with st.container(border=True):
             if "format_samples" not in st.session_state:
                 st.session_state.format_samples = []
@@ -522,7 +560,7 @@ font-size: 20px !important;
                         st.error(f"❌ {f_name} の読込失敗: {str(e)}")
 
             if st.session_state.format_file_names:
-                st.write("📌 ロード中:")
+                st.markdown("<div style='color:#1a331e; font-weight:bold; margin-top:10px;'>📌 ロード中サンプル:</div>", unsafe_allow_html=True)
                 for name in st.session_state.format_file_names:
                     st.write(f"・ {name}")
                 if st.button("🗑️ サンプルをクリア", use_container_width=True):
@@ -537,17 +575,17 @@ font-size: 20px !important;
         status_col1, status_col2 = st.columns([8, 2])
         with status_col1:
             st.markdown(f"""
-            <div style="background-color: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 24px; display: flex; align-items: center; gap: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+            <div style="background-color: white; border: 1.5px solid #d0d8cd; border-radius: 12px; padding: 18px 24px; display: flex; align-items: center; gap: 16px; box-shadow: 0 4px 8px rgba(0,0,0,0.02);">
                 <div class="avatar-circle-ai" style="width: 58px !important; height: 58px !important; font-size: 20px !important;">AI</div>
                 <div>
-                    <div style="font-weight: bold; font-size: 22px; color: #2d3748;">{st.session_state.app_title} サポートAI</div>
-                    <div style="color: #48bb78; font-size: 15px; font-weight: bold; margin-top: 3px;">● いつでも質問に答えますよ</div>
+                    <div style="font-weight: bold; font-size: 22px; color: #132817;">{st.session_state.app_title} サポートAI</div>
+                    <div style="color: #3b5e43; font-size: 15px; font-weight: bold; margin-top: 3px;">● いつでも質問に答えますよ</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
         with status_col2:
             st.markdown("""<div style="height:100%; display:flex; align-items:center; justify-content:center;">
-<button style="border:1px solid #e2e8f0; background:white; border-radius:12px; padding:16px; width:100%; font-weight:bold; cursor:pointer; font-size:16px; color:#a0aec0; height: 100%;">🔇 音声: 停止中</button>
+<button style="border:1.5px solid #d0d8cd; background:white; border-radius:12px; padding:16px; width:100%; font-weight:bold; cursor:pointer; font-size:16px; color:#a0aec0; height: 100%;">🔇 音声: 停止中</button>
 </div>""", unsafe_allow_html=True)
 
         st.write("")
